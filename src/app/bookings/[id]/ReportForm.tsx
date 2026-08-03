@@ -4,15 +4,7 @@ import { useState } from "react";
 import { submitReport } from "@/lib/actions";
 import { buttonClass } from "@/components/ui";
 
-export function ReportForm({
-  targetType,
-  targetId,
-  label,
-}: {
-  targetType: "USER" | "BOOKING" | "MESSAGE_THREAD";
-  targetId: string;
-  label: string;
-}) {
+export function ReportForm({ bookingId }: { bookingId: string }) {
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -25,7 +17,7 @@ export function ReportForm({
   if (done)
     return (
       <p className="text-sm text-emerald-700">
-        Report submitted. Our safety team will review it.
+        Report submitted. The Sitbaby team will review it.
       </p>
     );
 
@@ -35,14 +27,13 @@ export function ReportForm({
         onClick={() => setOpen(true)}
         className="text-sm font-medium text-red-600 hover:underline"
       >
-        {label}
+        Report a concern with this booking
       </button>
     );
 
   return (
     <form action={action} className="space-y-3">
-      <input type="hidden" name="targetType" value={targetType} />
-      <input type="hidden" name="targetId" value={targetId} />
+      <input type="hidden" name="bookingId" value={bookingId} />
       <textarea
         name="reason"
         required

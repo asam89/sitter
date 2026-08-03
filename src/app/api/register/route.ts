@@ -12,8 +12,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const { name, email, password, role, phone, city, communityPartnerIds } =
-    parsed.data;
+  const { name, email, password, role, phone, city } = parsed.data;
 
   const existing = await prisma.user.findUnique({
     where: { email: email.toLowerCase() },
@@ -27,6 +26,8 @@ export async function POST(req: Request) {
 
   const passwordHash = await bcrypt.hash(password, 10);
 
+  // Parents get a profile immediately. Sitters get a User only — they become
+  // bookable through the application -> vetting -> listing pipeline.
   const user = await prisma.user.create({
     data: {
       name,
@@ -36,17 +37,6 @@ export async function POST(req: Request) {
       phone: phone || null,
       parentProfile:
         role === "PARENT" ? { create: { city: city || null } } : undefined,
-      sitterProfile:
-        role === "SITTER" ? { create: { city: city || null } } : undefined,
-      affiliations: communityPartnerIds.length
-        ? {
-            create: communityPartnerIds.map((communityPartnerId) => ({
-              communityPartnerId,
-              role: "MEMBER",
-              status: "PENDING",
-            })),
-          }
-        : undefined,
     },
   });
 

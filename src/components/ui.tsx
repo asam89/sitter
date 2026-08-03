@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { clsx } from "clsx";
-import type { TrustTier } from "@/lib/trust";
-import { TRUST_LABEL } from "@/lib/trust";
 
 export function Card({
   children,
@@ -59,25 +57,6 @@ export function buttonClass(variant: "primary" | "secondary" = "primary") {
     variant === "primary"
       ? "bg-indigo-600 text-white hover:bg-indigo-700"
       : "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
-  );
-}
-
-const TIER_STYLE: Record<TrustTier, string> = {
-  COMMUNITY_ENDORSED: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-  PLATFORM_VERIFIED: "bg-sky-100 text-sky-800 ring-sky-200",
-  UNVERIFIED: "bg-slate-100 text-slate-600 ring-slate-200",
-};
-
-export function TrustBadge({ tier }: { tier: TrustTier }) {
-  return (
-    <span
-      className={clsx(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset",
-        TIER_STYLE[tier],
-      )}
-    >
-      {TRUST_LABEL[tier]}
-    </span>
   );
 }
 

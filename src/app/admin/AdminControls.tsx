@@ -1,89 +1,163 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState } from "react";
 import {
-  decidePartner,
-  decideDocument,
-  updateReportStatus,
+  moveApplicationUnderReview,
+  rejectApplication,
+  setListed,
   setUserSuspended,
+  updateReportStatus,
+  vetApplication,
 } from "@/lib/actions";
+import { ActionButton } from "@/components/ActionButton";
 import { buttonClass } from "@/components/ui";
 
-export function DecidePartner({ partnerId }: { partnerId: string }) {
-  const [pending, start] = useTransition();
-  return (
-    <div className="flex gap-2">
-      <button
-        disabled={pending}
-        className={buttonClass()}
-        onClick={() => start(() => void decidePartner(partnerId, true))}
-      >
-        Approve
-      </button>
-      <button
-        disabled={pending}
-        className={buttonClass("secondary")}
-        onClick={() => start(() => void decidePartner(partnerId, false))}
-      >
-        Reject
-      </button>
-    </div>
-  );
-}
+const inputCls =
+  "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
 
-export function DecideDocument({ documentId }: { documentId: string }) {
-  const [pending, start] = useTransition();
-  return (
-    <div className="flex gap-2">
-      <button
-        disabled={pending}
-        className={buttonClass()}
-        onClick={() => start(() => void decideDocument(documentId, true))}
-      >
-        Approve
-      </button>
-      <button
-        disabled={pending}
-        className={buttonClass("secondary")}
-        onClick={() => start(() => void decideDocument(documentId, false))}
-      >
-        Reject
-      </button>
-    </div>
-  );
-}
-
-export function ReportStatusControl({
-  reportId,
-  targetType,
-  targetId,
+// The prominent, fast listing toggle used across the Admin dashboard.
+export function ListingToggle({
+  sitterProfileId,
+  isListed,
 }: {
-  reportId: string;
-  targetType: string;
-  targetId: string;
+  sitterProfileId: string;
+  isListed: boolean;
 }) {
-  const [pending, start] = useTransition();
+  return (
+    <ActionButton
+      action={setListed.bind(null, sitterProfileId, !isListed)}
+      variant={isListed ? "secondary" : "primary"}
+    >
+      {isListed ? "Un-list" : "List"}
+    </ActionButton>
+  );
+}
+
+export function SuspendButton({
+  userId,
+  suspended,
+}: {
+  userId: string;
+  suspended: boolean;
+}) {
+  return (
+    <ActionButton
+      action={setUserSuspended.bind(null, userId, !suspended)}
+      variant="secondary"
+      confirm={suspended ? undefined : "Suspend this user pending review?"}
+    >
+      {suspended ? "Unsuspend" : "Suspend"}
+    </ActionButton>
+  );
+}
+
+export function ReportControls({ reportId }: { reportId: string }) {
   return (
     <div className="flex flex-wrap gap-2">
       {(["INVESTIGATING", "RESOLVED", "DISMISSED"] as const).map((st) => (
-        <button
+        <ActionButton
           key={st}
-          disabled={pending}
-          className={buttonClass("secondary")}
-          onClick={() => start(() => void updateReportStatus(reportId, st))}
+          action={updateReportStatus.bind(null, reportId, st)}
+          variant="secondary"
         >
-          {st}
-        </button>
+          {st.charAt(0) + st.slice(1).toLowerCase()}
+        </ActionButton>
       ))}
-      {targetType === "USER" && (
-        <button
-          disabled={pending}
-          className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
-          onClick={() => start(() => void setUserSuspended(targetId, true))}
+    </div>
+  );
+}
+
+export function ApplicationReview({
+  applicationId,
+  status,
+  targetPayRate,
+}: {
+  applicationId: string;
+  status: "APPLIED" | "UNDER_REVIEW" | "VETTED" | "REJECTED";
+  targetPayRate: number;
+}) {
+  const [mode, setMode] = useState<"none" | "vet" | "reject">("none");
+
+  if (mode === "vet")
+    return (
+      <form action={vetApplication} className="space-y-2">
+        <input type="hidden" name="applicationId" value={applicationId} />
+        <label className="block text-sm font-medium">
+          Listed pay rate (CAD/hr) — sitter proposed {targetPayRate}
+          <input
+            type="number"
+            name="listedPayRate"
+            required
+            min={1}
+            max={500}
+            defaultValue={targetPayRate}
+            className={inputCls}
+          />
+        </label>
+        <input
+          name="adminNotes"
+          placeholder="Notes (optional)"
+          className={inputCls}
+        />
+        <div className="flex gap-2">
+          <button type="submit" className={buttonClass()}>
+            Confirm vet &amp; set rate
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("none")}
+            className={buttonClass("secondary")}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
+
+  if (mode === "reject")
+    return (
+      <form action={rejectApplication} className="space-y-2">
+        <input type="hidden" name="applicationId" value={applicationId} />
+        <textarea
+          name="adminNotes"
+          placeholder="Reason (shown to applicant)"
+          rows={2}
+          className={inputCls}
+        />
+        <div className="flex gap-2">
+          <button type="submit" className={buttonClass()}>
+            Confirm rejection
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("none")}
+            className={buttonClass("secondary")}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {status === "APPLIED" && (
+        <ActionButton
+          action={moveApplicationUnderReview.bind(null, applicationId)}
+          variant="secondary"
         >
-          Soft-suspend user
-        </button>
+          Start review
+        </ActionButton>
       )}
+      <button onClick={() => setMode("vet")} className={buttonClass()}>
+        Vet &amp; list rate
+      </button>
+      <button
+        onClick={() => setMode("reject")}
+        className={buttonClass("secondary")}
+      >
+        Reject
+      </button>
     </div>
   );
 }

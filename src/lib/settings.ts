@@ -1,40 +1,44 @@
+import type { BusinessSettings, FeeType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-export const SETTING_KEYS = {
-  platformFeePct: "PLATFORM_FEE_PCT",
-  dispatchWindowSeconds: "DISPATCH_FALLBACK_WINDOW_SECONDS",
-} as const;
+const SINGLETON = "singleton";
 
-const DEFAULTS: Record<string, string> = {
-  [SETTING_KEYS.platformFeePct]: process.env.PLATFORM_FEE_PCT ?? "15",
-  [SETTING_KEYS.dispatchWindowSeconds]:
-    process.env.DISPATCH_FALLBACK_WINDOW_SECONDS ?? "300",
-};
-
-async function getSetting(key: string): Promise<string> {
-  const row = await prisma.platformSetting.findUnique({ where: { key } });
-  return row?.value ?? DEFAULTS[key] ?? "";
+function envFeeType(v: string | undefined, fallback: FeeType): FeeType {
+  return v === "FLAT" || v === "PERCENT" ? v : fallback;
 }
 
-export async function setSetting(key: string, value: string): Promise<void> {
-  await prisma.platformSetting.upsert({
-    where: { key },
-    create: { key, value },
-    update: { value },
+const DEFAULTS = {
+  lastMinuteThresholdHours: Number(process.env.LAST_MINUTE_THRESHOLD_HOURS ?? 12),
+  rushFeeType: envFeeType(process.env.RUSH_FEE_TYPE, "PERCENT"),
+  rushFeeAmount: Number(process.env.RUSH_FEE_AMOUNT ?? 25),
+  platformFeeType: envFeeType(process.env.PLATFORM_FEE_TYPE, "PERCENT"),
+  platformFeeAmount: Number(process.env.PLATFORM_FEE_AMOUNT ?? 15),
+} as const;
+
+// Loads the single BusinessSettings row, creating it from env defaults on first
+// use so the admin dashboard always has a row to edit.
+export async function getBusinessSettings(): Promise<BusinessSettings> {
+  return prisma.businessSettings.upsert({
+    where: { id: SINGLETON },
+    create: { id: SINGLETON, ...DEFAULTS },
+    update: {},
   });
 }
 
-export async function getPlatformFeePct(): Promise<number> {
-  return Number(await getSetting(SETTING_KEYS.platformFeePct));
-}
+export type BusinessSettingsInput = {
+  lastMinuteThresholdHours: number;
+  rushFeeType: FeeType;
+  rushFeeAmount: number;
+  platformFeeType: FeeType;
+  platformFeeAmount: number;
+};
 
-export async function getDispatchWindowSeconds(): Promise<number> {
-  return Number(await getSetting(SETTING_KEYS.dispatchWindowSeconds));
-}
-
-export async function getAllSettings() {
-  return {
-    platformFeePct: await getPlatformFeePct(),
-    dispatchWindowSeconds: await getDispatchWindowSeconds(),
-  };
+export async function updateBusinessSettings(
+  input: BusinessSettingsInput,
+): Promise<BusinessSettings> {
+  return prisma.businessSettings.upsert({
+    where: { id: SINGLETON },
+    create: { id: SINGLETON, ...input },
+    update: input,
+  });
 }

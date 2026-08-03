@@ -5,9 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, buttonClass } from "@/components/ui";
 
-type Partner = { id: string; name: string; type: string };
-
-export function SignupForm({ partners }: { partners: Partner[] }) {
+export function SignupForm() {
   const router = useRouter();
   const params = useSearchParams();
   const initialRole = params.get("role") === "SITTER" ? "SITTER" : "PARENT";
@@ -20,15 +18,8 @@ export function SignupForm({ partners }: { partners: Partner[] }) {
     phone: "",
     city: "",
   });
-  const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  function toggle(id: string) {
-    setSelected((s) =>
-      s.includes(id) ? s.filter((x) => x !== id) : [...s, id],
-    );
-  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +28,7 @@ export function SignupForm({ partners }: { partners: Partner[] }) {
     const res = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, role, communityPartnerIds: selected }),
+      body: JSON.stringify({ ...form, role }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -51,6 +42,7 @@ export function SignupForm({ partners }: { partners: Partner[] }) {
       redirect: false,
     });
     setLoading(false);
+    // Sitters land on their dashboard, which prompts them to apply.
     router.push(role === "SITTER" ? "/sitter" : "/parent");
     router.refresh();
   }
@@ -78,6 +70,14 @@ export function SignupForm({ partners }: { partners: Partner[] }) {
             </button>
           ))}
         </div>
+
+        {role === "SITTER" && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            After signing up you&apos;ll complete a vetting application. The
+            Sitbaby team reviews every applicant before you can be listed and
+            booked.
+          </p>
+        )}
 
         <label className="block text-sm font-medium">
           Full name
@@ -127,36 +127,6 @@ export function SignupForm({ partners }: { partners: Partner[] }) {
             />
           </label>
         </div>
-
-        <fieldset>
-          <legend className="text-sm font-medium">
-            Community affiliation{role === "SITTER" ? " (supports endorsement)" : ""}
-          </legend>
-          <p className="mb-2 text-xs text-slate-500">
-            Optional — you can join without a community affiliation.
-          </p>
-          <div className="space-y-2">
-            {partners.length === 0 && (
-              <p className="text-xs text-slate-500">
-                No community partners onboarded yet.
-              </p>
-            )}
-            {partners.map((p) => (
-              <label
-                key={p.id}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(p.id)}
-                  onChange={() => toggle(p.id)}
-                />
-                <span className="font-medium">{p.name}</span>
-                <span className="text-xs text-slate-400">{p.type}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button type="submit" disabled={loading} className={buttonClass()}>
