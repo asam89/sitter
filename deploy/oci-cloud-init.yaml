@@ -1,0 +1,60 @@
+#cloud-config
+# OCI Compute first-boot provisioning for Sitbaby.
+#
+# Paste this into "Instance details → Show advanced options → Management →
+# User data" (or `oci compute instance launch --user-data-file`) when creating
+# an Ubuntu 22.04 instance. On first boot it installs Docker, clones the repo,
+# writes a production .env (with generated secrets), and brings the stack up
+# behind Caddy.
+#
+# BEFORE LAUNCHING, edit the two write_files values marked EDIT-ME below:
+#   - SITE_ADDRESS / NEXTAUTH_URL — your domain (point its DNS A record at the
+#     instance's public IP first, so Caddy can issue a TLS cert). For a quick
+#     IP-only HTTP box, set SITE_ADDRESS=:80 and NEXTAUTH_URL=http://<public-ip>.
+#
+# Also open ingress for TCP 80 and 443 in the instance's subnet security list /
+# NSG, and (Ubuntu images enable iptables) the script opens them in the host
+# firewall too.
+
+package_update: true
+package_upgrade: true
+
+write_files:
+  # Non-secret config. Secrets (NEXTAUTH_SECRET, POSTGRES_PASSWORD) are generated
+  # on first boot by the runcmd below and appended to /opt/sitbaby/.env.
+  - path: /opt/sitbaby/deploy-config.env
+    permissions: "0644"
+    content: |
+      # EDIT-ME: your domain (DNS A record must point here) or ":80" for HTTP.
+      SITE_ADDRESS=sitbaby.example.com
+      NEXTAUTH_URL=https://sitbaby.example.com
+      TLS_EMAIL=admin@example.com
+      SEED_ON_START=false
+
+runcmd:
+  # --- Install Docker Engine + Compose plugin ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin git
+  - systemctl enable --now docker
+  # --- Open the host firewall for HTTP/HTTPS (OCI Ubuntu images ship iptables rules) ---
+  - iptables -I INPUT -p tcp --dport 80 -j ACCEPT || true
+  - iptables -I INPUT -p tcp --dport 443 -j ACCEPT || true
+  - (netfilter-persistent save || true)
+  # --- Clone the app ---
+  - git clone https://github.com/asam89/sitter.git /opt/sitbaby/app
+  # --- Build the production .env: generated secrets + the edited config above ---
+  - |
+    {
+      echo "POSTGRES_USER=postgres"
+      echo "POSTGRES_DB=sitbaby"
+      echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)"
+      echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
+      cat /opt/sitbaby/deploy-config.env
+    } > /opt/sitbaby/app/.env
+  - chmod 600 /opt/sitbaby/app/.env
+  # --- Launch ---
+  - docker compose -f /opt/sitbaby/app/docker-compose.prod.yml --project-directory /opt/sitbaby/app up -d --build
