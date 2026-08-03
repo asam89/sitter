@@ -1,101 +1,85 @@
-import Image from "next/image";
+import Link from "next/link";
+import { getSession } from "@/lib/session";
 
-export default function Home() {
+const PILLARS = [
+  {
+    title: "Community trust, not cold vetting",
+    body: "Sitters are endorsed by a community organization you already share — a mosque, school, or sports league — not just anonymous document review.",
+  },
+  {
+    title: "Fast because trust is pre-established",
+    body: "Vetting happens upstream at the community level, so booking is on-demand: request now and the nearest trusted sitter responds.",
+  },
+  {
+    title: "Flat, transparent pricing",
+    body: "No subscriptions. No pay-to-message wall. You see the sitter's rate plus a single flat platform fee before you commit — ever.",
+  },
+];
+
+export default async function Home() {
+  const session = await getSession();
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="space-y-12">
+      <section className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 px-8 py-14 text-white">
+        <h1 className="max-w-2xl text-4xl font-bold leading-tight sm:text-5xl">
+          Trusted childcare from families you already share a community with.
+        </h1>
+        <p className="mt-4 max-w-xl text-lg text-indigo-100">
+          No subscriptions, no cold strangers. CircleCare connects parents with
+          sitters endorsed by their own community.
+        </p>
+        <div className="mt-8 flex flex-wrap gap-3">
+          {session?.user ? (
+            <Link
+              href="/parent"
+              className="rounded-lg bg-white px-5 py-2.5 font-semibold text-indigo-700 hover:bg-indigo-50"
+            >
+              Go to dashboard
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/signup?role=PARENT"
+                className="rounded-lg bg-white px-5 py-2.5 font-semibold text-indigo-700 hover:bg-indigo-50"
+              >
+                Find a sitter
+              </Link>
+              <Link
+                href="/signup?role=SITTER"
+                className="rounded-lg border border-white/60 px-5 py-2.5 font-semibold text-white hover:bg-white/10"
+              >
+                Become a sitter
+              </Link>
+            </>
+          )}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </section>
+
+      <section className="grid gap-6 md:grid-cols-3">
+        {PILLARS.map((p) => (
+          <div
+            key={p.title}
+            className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+          >
+            <h3 className="text-lg font-semibold">{p.title}</h3>
+            <p className="mt-2 text-sm text-slate-600">{p.body}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+        CircleCare is a marketplace connecting independent parents and sitters.
+        Community endorsement is a trust signal, not a legal guarantee of
+        conduct. We never collect a child&apos;s full legal name or photo.
+      </section>
+
+      <section className="text-center text-sm text-slate-500">
+        Run a mosque, school, or sports league?{" "}
+        <Link href="/partner/apply" className="font-medium text-indigo-600">
+          Become a Community Partner
+        </Link>
+        .
+      </section>
     </div>
   );
 }
