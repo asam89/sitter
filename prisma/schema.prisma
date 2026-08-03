@@ -1,0 +1,356 @@
+// CircleCare — Community-Trust On-Demand Babysitter Platform
+// Prisma schema. See docs/circlecare-mvp-notes.md for design notes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  PARENT
+  SITTER
+  COMMUNITY_ADMIN
+  PLATFORM_ADMIN
+}
+
+enum CommunityType {
+  MOSQUE
+  SCHOOL
+  SPORTS_LEAGUE
+  OTHER
+}
+
+enum PartnerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum AffiliationRole {
+  MEMBER
+  ADMIN
+}
+
+enum AffiliationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Platform-level verification of a sitter's uploaded documents (manual review).
+// Community endorsement is tracked separately via the Endorsement model.
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  PLATFORM_VERIFIED
+}
+
+enum EndorsementStatus {
+  PENDING
+  APPROVED
+  DENIED
+  REVOKED
+}
+
+enum DocumentType {
+  ID
+  BACKGROUND_CHECK
+  CERTIFICATION
+}
+
+enum DocumentReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RequestType {
+  NOW
+  SCHEDULED
+}
+
+enum BookingStatus {
+  PENDING // dispatching / awaiting a sitter to accept
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  EXPIRED // no sitter accepted within the dispatch window
+}
+
+enum DispatchTier {
+  COMMUNITY_ENDORSED
+  PLATFORM_VERIFIED
+}
+
+enum DispatchOfferStatus {
+  OFFERED
+  VIEWED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum ReportTargetType {
+  USER
+  BOOKING
+  MESSAGE_THREAD
+}
+
+enum ReportStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+// ---------- Core ----------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(PARENT)
+  phone        String?
+  suspended    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  parentProfile ParentProfile?
+  sitterProfile SitterProfile?
+
+  affiliations       CommunityAffiliation[]
+  endorsementsGiven  Endorsement[]          @relation("EndorsedByAdmin")
+  documentsReviewed  VerificationDocument[] @relation("DocReviewer")
+
+  parentBookings Booking[] @relation("ParentBookings")
+  sitterBookings Booking[] @relation("SitterBookings")
+  dispatchOffers DispatchOffer[]
+
+  messages        Message[]
+  reviewsAuthored Review[]  @relation("ReviewAuthor")
+  reviewsReceived Review[]  @relation("ReviewTarget")
+  reportsMade     Report[]  @relation("Reporter")
+}
+
+model CommunityPartner {
+  id          String        @id @default(cuid())
+  name        String
+  type        CommunityType @default(OTHER)
+  status      PartnerStatus @default(PENDING)
+  description String?
+  city        String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  affiliations CommunityAffiliation[]
+  endorsements Endorsement[]
+  reports      Report[]               @relation("PartnerVisibleReports")
+}
+
+model CommunityAffiliation {
+  id                 String            @id @default(cuid())
+  userId             String
+  communityPartnerId String
+  role               AffiliationRole   @default(MEMBER)
+  status             AffiliationStatus @default(PENDING)
+  createdAt          DateTime          @default(now())
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  communityPartner CommunityPartner @relation(fields: [communityPartnerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityPartnerId])
+  @@index([communityPartnerId])
+}
+
+model ParentProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  address   String?
+  city      String?
+  lat       Float?
+  lng       Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SitterProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  bio                String?
+  hourlyRate         Int                @default(20) // in whole currency units (CAD)
+  serviceRadiusKm    Int                @default(15)
+  isAvailableNow     Boolean            @default(false)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  languages          String[]
+  certifications     String[]
+  city               String?
+  lat                Float?
+  lng                Float?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endorsements Endorsement[]
+  documents VerificationDocument[]
+
+  @@index([isAvailableNow])
+}
+
+model Endorsement {
+  id                 String            @id @default(cuid())
+  sitterProfileId    String
+  communityPartnerId String
+  endorsedByAdminId  String?
+  status             EndorsementStatus @default(PENDING)
+  note               String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  sitterProfile    SitterProfile    @relation(fields: [sitterProfileId], references: [id], onDelete: Cascade)
+  communityPartner CommunityPartner @relation(fields: [communityPartnerId], references: [id], onDelete: Cascade)
+  endorsedByAdmin  User?            @relation("EndorsedByAdmin", fields: [endorsedByAdminId], references: [id])
+
+  @@unique([sitterProfileId, communityPartnerId])
+  @@index([communityPartnerId])
+}
+
+model VerificationDocument {
+  id               String               @id @default(cuid())
+  sitterProfileId  String
+  type             DocumentType
+  fileUrl          String
+  reviewStatus     DocumentReviewStatus @default(PENDING)
+  reviewedByAdminId String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  sitterProfile SitterProfile @relation(fields: [sitterProfileId], references: [id], onDelete: Cascade)
+  reviewedBy    User?         @relation("DocReviewer", fields: [reviewedByAdminId], references: [id])
+}
+
+model Booking {
+  id                String        @id @default(cuid())
+  parentId          String
+  sitterId          String?
+  requestType       RequestType   @default(NOW)
+  status            BookingStatus @default(PENDING)
+  dateTime          DateTime
+  durationHours     Int           @default(2)
+  childrenAgeRange  String // e.g. "2-5" — no names/photos, PIPEDA data minimization
+  numberOfChildren  Int           @default(1)
+  city              String?
+  lat               Float?
+  lng               Float?
+  address           String? // released to sitter only after acceptance
+  addressReleasedAt DateTime?
+
+  sitterHourlyRate  Int // snapshot at request time
+  platformFeePct    Float // snapshot of configurable fee at request time
+  platformFeeAmount Int // computed total platform fee
+  totalAmount       Int // (rate + fee) * duration
+
+  communityOnly     Boolean   @default(false) // parent filtered to endorsed-only
+  dispatchDeadline  DateTime? // fallback-window boundary for NOW requests
+
+  stripePaymentIntentId String?
+  paidAt                DateTime?
+  payoutReleasedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent         User            @relation("ParentBookings", fields: [parentId], references: [id])
+  sitter         User?           @relation("SitterBookings", fields: [sitterId], references: [id])
+  dispatchOffers DispatchOffer[]
+  messages       Message[]
+  reviews        Review[]
+
+  @@index([status])
+  @@index([parentId])
+  @@index([sitterId])
+}
+
+model DispatchOffer {
+  id          String              @id @default(cuid())
+  bookingId   String
+  sitterId    String
+  tier        DispatchTier
+  status      DispatchOfferStatus @default(OFFERED)
+  offeredAt   DateTime            @default(now())
+  viewedAt    DateTime?
+  respondedAt DateTime?
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sitter  User    @relation(fields: [sitterId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, sitterId])
+  @@index([sitterId, status])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  bookingId String
+  senderId  String
+  content   String
+  sentAt    DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sender  User    @relation(fields: [senderId], references: [id])
+
+  @@index([bookingId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  bookingId String
+  authorId  String
+  targetId  String
+  rating    Int // 1-5
+  text      String?
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  author  User    @relation("ReviewAuthor", fields: [authorId], references: [id])
+  target  User    @relation("ReviewTarget", fields: [targetId], references: [id])
+
+  @@unique([bookingId, authorId]) // one review per author per booking
+  @@index([targetId])
+}
+
+model Report {
+  id                       String           @id @default(cuid())
+  reporterId               String
+  targetType               ReportTargetType
+  targetId                 String
+  reason                   String
+  status                   ReportStatus     @default(OPEN)
+  visibleToCommunityPartnerId String?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+
+  reporter                User              @relation("Reporter", fields: [reporterId], references: [id])
+  visibleToCommunityPartner CommunityPartner? @relation("PartnerVisibleReports", fields: [visibleToCommunityPartnerId], references: [id])
+
+  @@index([status])
+  @@index([visibleToCommunityPartnerId])
+}
+
+// Configurable platform settings (fee, dispatch window). Key/value so the
+// business can change them from the admin dashboard without a code change.
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
