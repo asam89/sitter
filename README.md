@@ -85,7 +85,29 @@ existing bookings.
 Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS · Prisma 6 +
 PostgreSQL · NextAuth (credentials) · Stripe Connect Express · Zod.
 
-## Getting started
+## Quick start with Docker Compose
+
+The fastest way to stand up a dev environment (Postgres + the app, migrated and
+seeded) is Docker Compose — no local Node/Postgres required:
+
+```bash
+docker compose up --build      # app on http://localhost:3000
+```
+
+On first boot the app container applies migrations and (because `SEED_ON_START`
+defaults to `true`) seeds the demo accounts below. Then:
+
+```bash
+docker compose down            # stop
+docker compose down -v         # stop and wipe the database volume
+```
+
+Everything runs out-of-the-box with dev defaults; override any value via a shell
+env or an `.env` file next to `docker-compose.yml` (e.g. `NEXTAUTH_SECRET`,
+`APP_PORT`, `SEED_ON_START`, Stripe keys). Stripe is optional — unset keys run in
+mock payment mode.
+
+## Getting started (without Docker)
 
 Requires Node.js 18+ and a PostgreSQL database.
 
