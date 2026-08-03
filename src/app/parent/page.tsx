@@ -1,94 +1,85 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { PageTitle, Card, ButtonLink, Badge, EmptyState } from "@/components/ui";
-import { dt, money } from "@/lib/format";
+import { requireRole } from "@/lib/session";
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  EmptyState,
+  PageTitle,
+} from "@/components/ui";
 import { BOOKING_STATUS_COLOR } from "@/lib/status";
+import { dt, money } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function ParentDashboard() {
   const user = await requireRole("PARENT");
-  const [bookings, affiliations] = await Promise.all([
-    prisma.booking.findMany({
-      where: { parentId: user.id },
-      orderBy: { createdAt: "desc" },
-      include: { sitter: { select: { name: true } } },
-      take: 20,
-    }),
-    prisma.communityAffiliation.findMany({
-      where: { userId: user.id },
-      include: { communityPartner: { select: { name: true } } },
-    }),
-  ]);
+  const bookings = await prisma.booking.findMany({
+    where: { parentId: user.id },
+    orderBy: { dateTime: "desc" },
+    include: { sitter: { select: { name: true } } },
+  });
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageTitle
-        title={`Welcome, ${user.name}`}
-        subtitle="Request trusted childcare on demand or schedule ahead."
+        title={`Hi, ${user.name}`}
+        subtitle="Book a vetted Sitbaby sitter around your schedule."
       />
 
-      <div className="flex flex-wrap gap-3">
-        <ButtonLink href="/parent/request">Request now</ButtonLink>
-        <ButtonLink href="/sitters" variant="secondary">
-          Browse sitters
-        </ButtonLink>
-      </div>
+      <Card className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Find & book a sitter</h2>
+          <p className="text-sm text-slate-600">
+            See real availability from our currently-listed, vetted sitters.
+          </p>
+        </div>
+        <ButtonLink href="/parent/schedule">View availability</ButtonLink>
+      </Card>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Your communities</h2>
-        {affiliations.length === 0 ? (
-          <EmptyState>
-            You have no community affiliations.{" "}
-            <Link href="/communities" className="font-medium text-indigo-600">
-              Join a community
-            </Link>{" "}
-            to unlock community-endorsed sitters.
-          </EmptyState>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {affiliations.map((a) => (
-              <Badge
-                key={a.id}
-                color={a.status === "APPROVED" ? "green" : "amber"}
-              >
-                {a.communityPartner.name} · {a.status}
-              </Badge>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Your bookings</h2>
+        <h2 className="mb-3 font-semibold">Your bookings</h2>
         {bookings.length === 0 ? (
-          <EmptyState>No bookings yet.</EmptyState>
+          <EmptyState>
+            No bookings yet.{" "}
+            <Link href="/parent/schedule" className="text-indigo-600">
+              Browse availability
+            </Link>
+            .
+          </EmptyState>
         ) : (
           <div className="space-y-3">
             {bookings.map((b) => (
-              <Link key={b.id} href={`/bookings/${b.id}`} className="block">
-                <Card className="flex items-center justify-between hover:border-indigo-300">
+              <Card key={b.id}>
+                <div className="flex items-center justify-between">
                   <div>
-                    <div className="font-medium">
-                      {b.requestType === "NOW" ? "On-demand" : "Scheduled"} ·{" "}
+                    <p className="font-medium">
+                      {dt(b.dateTime)} · {b.durationHours}h with {b.sitter.name}
+                    </p>
+                    <p className="text-sm text-slate-600">
                       {b.numberOfChildren} child(ren), ages {b.childrenAgeRange}
-                    </div>
-                    <div className="text-sm text-slate-500">
-                      {dt(b.dateTime)} · {b.durationHours}h ·{" "}
-                      {b.sitter ? `Sitter: ${b.sitter.name}` : "Finding sitter…"}
-                    </div>
+                      {b.isLastMinute && (
+                        <span className="ml-2 text-amber-700">· last-minute</span>
+                      )}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Total {money(b.totalAmount)}
+                    </p>
                   </div>
-                  <div className="text-right">
+                  <div className="flex flex-col items-end gap-2">
                     <Badge color={BOOKING_STATUS_COLOR[b.status]}>
                       {b.status}
                     </Badge>
-                    <div className="mt-1 text-sm font-semibold">
-                      {money(b.totalAmount)}
-                    </div>
+                    <Link
+                      href={`/bookings/${b.id}`}
+                      className="text-sm font-medium text-indigo-600"
+                    >
+                      View
+                    </Link>
                   </div>
-                </Card>
-              </Link>
+                </div>
+              </Card>
             ))}
           </div>
         )}

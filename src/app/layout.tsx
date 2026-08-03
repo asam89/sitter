@@ -4,9 +4,9 @@ import { Providers } from "@/components/Providers";
 import { Navbar } from "@/components/Navbar";
 
 export const metadata: Metadata = {
-  title: "CircleCare — Trusted childcare from your community",
+  title: "Sitbaby — Agency-vetted babysitters, booked in seconds",
   description:
-    "Fast, trusted childcare from families you already share a community with. No subscriptions, no cold strangers.",
+    "Every Sitbaby sitter is vetted and hand-listed by our team. Log in, see real availability, and book directly.",
 };
 
 export default function RootLayout({

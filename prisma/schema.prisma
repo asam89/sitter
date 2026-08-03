@@ -1,5 +1,6 @@
-// CircleCare — Community-Trust On-Demand Babysitter Platform
-// Prisma schema. See docs/circlecare-mvp-notes.md for design notes.
+// Sitbaby — Agency-vetted babysitter scheduling & booking platform.
+// The trust layer is the business itself: Sitbaby (Admin) vets every sitter and
+// curates who is *listed* (bookable). See docs/sitbaby-agency-model-notes.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -16,93 +17,32 @@ datasource db {
 enum Role {
   PARENT
   SITTER
-  COMMUNITY_ADMIN
-  PLATFORM_ADMIN
-}
-
-enum CommunityType {
-  MOSQUE
-  SCHOOL
-  SPORTS_LEAGUE
-  OTHER
-}
-
-enum PartnerStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  SUSPENDED
-}
-
-enum AffiliationRole {
-  MEMBER
   ADMIN
 }
 
-enum AffiliationStatus {
-  PENDING
-  APPROVED
+// Sitter application lifecycle (manual Admin review; no automated bg-check API).
+enum ApplicationStatus {
+  APPLIED
+  UNDER_REVIEW
+  VETTED
   REJECTED
 }
 
-// Platform-level verification of a sitter's uploaded documents (manual review).
-// Community endorsement is tracked separately via the Endorsement model.
-enum VerificationStatus {
-  UNVERIFIED
-  PENDING
-  PLATFORM_VERIFIED
-}
-
-enum EndorsementStatus {
-  PENDING
-  APPROVED
-  DENIED
-  REVOKED
-}
-
-enum DocumentType {
-  ID
-  BACKGROUND_CHECK
-  CERTIFICATION
-}
-
-enum DocumentReviewStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum RequestType {
-  NOW
-  SCHEDULED
+enum SlotStatus {
+  OPEN
+  BOOKED
 }
 
 enum BookingStatus {
-  PENDING // dispatching / awaiting a sitter to accept
-  ACCEPTED
-  IN_PROGRESS
-  COMPLETED
+  REQUESTED // created, awaiting payment
+  CONFIRMED // paid; funds held in escrow
+  COMPLETED // marked complete; payout released to sitter
   CANCELLED
-  EXPIRED // no sitter accepted within the dispatch window
 }
 
-enum DispatchTier {
-  COMMUNITY_ENDORSED
-  PLATFORM_VERIFIED
-}
-
-enum DispatchOfferStatus {
-  OFFERED
-  VIEWED
-  ACCEPTED
-  DECLINED
-  EXPIRED
-}
-
-enum ReportTargetType {
-  USER
-  BOOKING
-  MESSAGE_THREAD
+enum FeeType {
+  FLAT
+  PERCENT
 }
 
 enum ReportStatus {
@@ -127,49 +67,13 @@ model User {
 
   parentProfile ParentProfile?
   sitterProfile SitterProfile?
+  application   SitterApplication?
 
-  affiliations       CommunityAffiliation[]
-  endorsementsGiven  Endorsement[]          @relation("EndorsedByAdmin")
-  documentsReviewed  VerificationDocument[] @relation("DocReviewer")
-
-  parentBookings Booking[] @relation("ParentBookings")
-  sitterBookings Booking[] @relation("SitterBookings")
-  dispatchOffers DispatchOffer[]
-
-  messages        Message[]
-  reviewsAuthored Review[]  @relation("ReviewAuthor")
-  reviewsReceived Review[]  @relation("ReviewTarget")
-  reportsMade     Report[]  @relation("Reporter")
-}
-
-model CommunityPartner {
-  id          String        @id @default(cuid())
-  name        String
-  type        CommunityType @default(OTHER)
-  status      PartnerStatus @default(PENDING)
-  description String?
-  city        String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  affiliations CommunityAffiliation[]
-  endorsements Endorsement[]
-  reports      Report[]               @relation("PartnerVisibleReports")
-}
-
-model CommunityAffiliation {
-  id                 String            @id @default(cuid())
-  userId             String
-  communityPartnerId String
-  role               AffiliationRole   @default(MEMBER)
-  status             AffiliationStatus @default(PENDING)
-  createdAt          DateTime          @default(now())
-
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  communityPartner CommunityPartner @relation(fields: [communityPartnerId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, communityPartnerId])
-  @@index([communityPartnerId])
+  parentBookings      Booking[]           @relation("ParentBookings")
+  sitterBookings      Booking[]           @relation("SitterBookings")
+  applicationsReviewed SitterApplication[] @relation("ApplicationReviewer")
+  messages            Message[]
+  reportsMade         Report[]            @relation("Reporter")
 }
 
 model ParentProfile {
@@ -177,126 +81,115 @@ model ParentProfile {
   userId    String   @unique
   address   String?
   city      String?
-  lat       Float?
-  lng       Float?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model SitterProfile {
-  id                 String             @id @default(cuid())
-  userId             String             @unique
-  bio                String?
-  hourlyRate         Int                @default(20) // in whole currency units (CAD)
-  serviceRadiusKm    Int                @default(15)
-  isAvailableNow     Boolean            @default(false)
-  verificationStatus VerificationStatus @default(UNVERIFIED)
-  languages          String[]
-  certifications     String[]
-  city               String?
-  lat                Float?
-  lng                Float?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-
-  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endorsements Endorsement[]
-  documents VerificationDocument[]
-
-  @@index([isAvailableNow])
-}
-
-model Endorsement {
-  id                 String            @id @default(cuid())
-  sitterProfileId    String
-  communityPartnerId String
-  endorsedByAdminId  String?
-  status             EndorsementStatus @default(PENDING)
-  note               String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-
-  sitterProfile    SitterProfile    @relation(fields: [sitterProfileId], references: [id], onDelete: Cascade)
-  communityPartner CommunityPartner @relation(fields: [communityPartnerId], references: [id], onDelete: Cascade)
-  endorsedByAdmin  User?            @relation("EndorsedByAdmin", fields: [endorsedByAdminId], references: [id])
-
-  @@unique([sitterProfileId, communityPartnerId])
-  @@index([communityPartnerId])
-}
-
-model VerificationDocument {
-  id               String               @id @default(cuid())
-  sitterProfileId  String
-  type             DocumentType
-  fileUrl          String
-  reviewStatus     DocumentReviewStatus @default(PENDING)
+// A sitter's application. targetPayRate is the sitter's *requested* rate — a
+// proposal. It is stored here permanently and is NEVER overwritten by the
+// Admin-set listed rate (which lives on SitterProfile.listedPayRate).
+model SitterApplication {
+  id                String            @id @default(cuid())
+  userId            String            @unique
+  bio               String
+  experience        String
+  certifications    String[] // free-text labels, e.g. "CPR", "First Aid"
+  documentUrls      String[] // uploaded doc URLs (CPR cert, police check, etc.)
+  targetPayRate     Int // sitter's requested hourly rate (whole CAD)
+  status            ApplicationStatus @default(APPLIED)
   reviewedByAdminId String?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  reviewedAt        DateTime?
+  adminNotes        String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("ApplicationReviewer", fields: [reviewedByAdminId], references: [id])
+
+  @@index([status])
+}
+
+// Created only when Admin VETS an application. listedPayRate is the Admin-set
+// rate; isListed is the curation gate (controlled exclusively by Admin) that
+// decides whether the sitter appears in any parent-facing view.
+model SitterProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  bio             String?
+  city            String?
+  listedPayRate   Int // Admin-set hourly rate (whole CAD) — distinct from targetPayRate
+  isListed        Boolean  @default(false)
+  serviceRadiusKm Int      @default(15)
+  vettedAt        DateTime @default(now())
+  stripeAccountId String? // Stripe Connect Express connected account (test mode)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slots AvailabilitySlot[]
+
+  @@index([isListed])
+}
+
+model AvailabilitySlot {
+  id              String     @id @default(cuid())
+  sitterProfileId String
+  startTime       DateTime
+  endTime         DateTime
+  status          SlotStatus @default(OPEN)
+  createdAt       DateTime   @default(now())
 
   sitterProfile SitterProfile @relation(fields: [sitterProfileId], references: [id], onDelete: Cascade)
-  reviewedBy    User?         @relation("DocReviewer", fields: [reviewedByAdminId], references: [id])
+  booking       Booking?
+
+  @@index([sitterProfileId, status])
+  @@index([startTime])
 }
 
 model Booking {
-  id                String        @id @default(cuid())
-  parentId          String
-  sitterId          String?
-  requestType       RequestType   @default(NOW)
-  status            BookingStatus @default(PENDING)
-  dateTime          DateTime
-  durationHours     Int           @default(2)
-  childrenAgeRange  String // e.g. "2-5" — no names/photos, PIPEDA data minimization
-  numberOfChildren  Int           @default(1)
-  city              String?
-  lat               Float?
-  lng               Float?
-  address           String? // released to sitter only after acceptance
-  addressReleasedAt DateTime?
+  id                 String    @id @default(cuid())
+  parentId           String
+  sitterId           String
+  availabilitySlotId String    @unique
+  dateTime           DateTime
+  durationHours      Int
+  childrenAgeRange   String // e.g. "2-5" — no names/photos (data minimization)
+  numberOfChildren   Int       @default(1)
+  notes              String?
 
-  sitterHourlyRate  Int // snapshot at request time
-  platformFeePct    Float // snapshot of configurable fee at request time
-  platformFeeAmount Int // computed total platform fee
-  totalAmount       Int // (rate + fee) * duration
+  // Pricing snapshot (taken at booking time so later settings changes don't
+  // retroactively alter a confirmed booking).
+  listedRateSnapshot Int
+  baseAmount         Int // listedRate * durationHours
+  isLastMinute       Boolean @default(false)
+  rushFeeAmount      Int     @default(0) // computed, disclosed as its own line item
+  platformFeeAmount  Int     @default(0)
+  totalAmount        Int // what the parent is charged
 
-  communityOnly     Boolean   @default(false) // parent filtered to endorsed-only
-  dispatchDeadline  DateTime? // fallback-window boundary for NOW requests
+  // Waiver acceptance record (version + timestamp).
+  waiverVersion    String
+  waiverAcceptedAt DateTime
 
+  status                BookingStatus @default(REQUESTED)
   stripePaymentIntentId String?
   paidAt                DateTime?
+  completedAt           DateTime?
   payoutReleasedAt      DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  parent         User            @relation("ParentBookings", fields: [parentId], references: [id])
-  sitter         User?           @relation("SitterBookings", fields: [sitterId], references: [id])
-  dispatchOffers DispatchOffer[]
-  messages       Message[]
-  reviews        Review[]
+  parent          User             @relation("ParentBookings", fields: [parentId], references: [id])
+  sitter          User             @relation("SitterBookings", fields: [sitterId], references: [id])
+  availabilitySlot AvailabilitySlot @relation(fields: [availabilitySlotId], references: [id])
+  messages        Message[]
+  reports         Report[]
 
   @@index([status])
   @@index([parentId])
   @@index([sitterId])
-}
-
-model DispatchOffer {
-  id          String              @id @default(cuid())
-  bookingId   String
-  sitterId    String
-  tier        DispatchTier
-  status      DispatchOfferStatus @default(OFFERED)
-  offeredAt   DateTime            @default(now())
-  viewedAt    DateTime?
-  respondedAt DateTime?
-
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  sitter  User    @relation(fields: [sitterId], references: [id], onDelete: Cascade)
-
-  @@unique([bookingId, sitterId])
-  @@index([sitterId, status])
 }
 
 model Message {
@@ -312,45 +205,40 @@ model Message {
   @@index([bookingId])
 }
 
-model Review {
-  id        String   @id @default(cuid())
-  bookingId String
-  authorId  String
-  targetId  String
-  rating    Int // 1-5
-  text      String?
-  createdAt DateTime @default(now())
-
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  author  User    @relation("ReviewAuthor", fields: [authorId], references: [id])
-  target  User    @relation("ReviewTarget", fields: [targetId], references: [id])
-
-  @@unique([bookingId, authorId]) // one review per author per booking
-  @@index([targetId])
-}
-
+// Incident/report tied to a specific booking, routed to the Admin queue.
 model Report {
-  id                       String           @id @default(cuid())
-  reporterId               String
-  targetType               ReportTargetType
-  targetId                 String
-  reason                   String
-  status                   ReportStatus     @default(OPEN)
-  visibleToCommunityPartnerId String?
-  createdAt                DateTime         @default(now())
-  updatedAt                DateTime         @updatedAt
+  id         String       @id @default(cuid())
+  reporterId String
+  bookingId  String
+  reason     String
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 
-  reporter                User              @relation("Reporter", fields: [reporterId], references: [id])
-  visibleToCommunityPartner CommunityPartner? @relation("PartnerVisibleReports", fields: [visibleToCommunityPartnerId], references: [id])
+  reporter User    @relation("Reporter", fields: [reporterId], references: [id])
+  booking  Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([status])
-  @@index([visibleToCommunityPartnerId])
+  @@index([bookingId])
 }
 
-// Configurable platform settings (fee, dispatch window). Key/value so the
-// business can change them from the admin dashboard without a code change.
-model PlatformSetting {
-  key       String   @id
-  value     String
-  updatedAt DateTime @updatedAt
+// Versioned waiver / terms-of-service text. The booking stores which version a
+// parent accepted so we always know exactly what they agreed to.
+model TermsVersion {
+  id        String   @id @default(cuid())
+  version   String   @unique
+  body      String
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// Single-row configurable business rules (Admin dashboard).
+model BusinessSettings {
+  id                       String  @id @default("singleton")
+  lastMinuteThresholdHours Int     @default(12)
+  rushFeeType              FeeType @default(PERCENT)
+  rushFeeAmount            Int     @default(25) // percent, or flat CAD if FLAT
+  platformFeeType          FeeType @default(PERCENT)
+  platformFeeAmount        Int     @default(15) // percent, or flat CAD if FLAT
+  updatedAt                DateTime @updatedAt
 }

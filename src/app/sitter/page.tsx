@@ -1,132 +1,155 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/session";
+import { connectStripe } from "@/lib/actions";
+import { ActionButton } from "@/components/ActionButton";
 import {
-  PageTitle,
-  Card,
   Badge,
-  EmptyState,
   ButtonLink,
+  Card,
+  EmptyState,
+  PageTitle,
 } from "@/components/ui";
+import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
 import { dt, money, moneyHr } from "@/lib/format";
-import { BOOKING_STATUS_COLOR } from "@/lib/status";
-import { AvailabilityToggle } from "./AvailabilityToggle";
-import { OfferActions } from "./OfferActions";
-import { markOffersViewed } from "@/lib/sitterView";
 
 export const dynamic = "force-dynamic";
 
 export default async function SitterDashboard() {
   const user = await requireRole("SITTER");
-  const profile = await prisma.sitterProfile.findUnique({
-    where: { userId: user.id },
-  });
-
-  // Incoming, still-open offers (booking PENDING and unassigned).
-  const offers = await prisma.dispatchOffer.findMany({
-    where: {
-      sitterId: user.id,
-      status: { in: ["OFFERED", "VIEWED"] },
-      booking: { status: "PENDING", sitterId: null },
-    },
-    include: { booking: { include: { parent: { select: { name: true } } } } },
-    orderBy: { offeredAt: "desc" },
-  });
-  await markOffersViewed(offers.map((o) => o.id));
-
+  const [application, profile] = await Promise.all([
+    prisma.sitterApplication.findUnique({ where: { userId: user.id } }),
+    prisma.sitterProfile.findUnique({
+      where: { userId: user.id },
+      include: { slots: { where: { status: "OPEN" } } },
+    }),
+  ]);
   const bookings = await prisma.booking.findMany({
     where: { sitterId: user.id },
-    orderBy: { createdAt: "desc" },
+    orderBy: { dateTime: "desc" },
     include: { parent: { select: { name: true } } },
-    take: 15,
   });
 
   return (
-    <div className="space-y-8">
-      <PageTitle title={`Hi, ${user.name}`} subtitle="Your sitter dashboard" />
+    <div className="space-y-6">
+      <PageTitle title={`Hi, ${user.name}`} subtitle="Your sitter dashboard." />
 
-      <Card className="flex items-center justify-between">
-        <div>
-          <div className="font-semibold">Available now</div>
-          <div className="text-sm text-slate-500">
-            Toggle on to receive on-demand requests.
+      {/* Vetting / listing status */}
+      {!application ? (
+        <Card>
+          <h2 className="font-semibold">Get vetted to start sitting</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Every Sitbaby sitter is manually vetted by our team before they can
+            be listed and booked.
+          </p>
+          <div className="mt-3">
+            <ButtonLink href="/sitter/apply">Start application</ButtonLink>
           </div>
-        </div>
-        <AvailabilityToggle initial={profile?.isAvailableNow ?? false} />
-      </Card>
-
-      <div className="flex flex-wrap gap-3">
-        <ButtonLink href="/sitter/profile" variant="secondary">
-          Edit profile ({profile ? moneyHr(profile.hourlyRate) : "—"})
-        </ButtonLink>
-        <ButtonLink href="/sitter/endorsements" variant="secondary">
-          Community endorsements
-        </ButtonLink>
-        <ButtonLink href="/sitter/verification" variant="secondary">
-          Verification documents
-        </ButtonLink>
-      </div>
-
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Incoming requests</h2>
-        {offers.length === 0 ? (
-          <EmptyState>
-            No open requests right now. Turn on &quot;Available now&quot; to get
-            dispatched.
-          </EmptyState>
-        ) : (
-          <div className="space-y-3">
-            {offers.map((o) => (
-              <Card key={o.id} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">
-                    {o.booking.numberOfChildren} child(ren), ages{" "}
-                    {o.booking.childrenAgeRange}
-                  </div>
-                  <Badge
-                    color={
-                      o.tier === "COMMUNITY_ENDORSED" ? "green" : "indigo"
-                    }
-                  >
-                    {o.tier === "COMMUNITY_ENDORSED"
-                      ? "Community request"
-                      : "Platform request"}
-                  </Badge>
-                </div>
-                <div className="text-sm text-slate-500">
-                  {o.booking.requestType === "NOW" ? "Now" : dt(o.booking.dateTime)}{" "}
-                  · {o.booking.durationHours}h · Parent {o.booking.parent.name} ·
-                  earns {money(o.booking.sitterHourlyRate * o.booking.durationHours)}
-                </div>
-                <OfferActions bookingId={o.bookingId} />
-              </Card>
-            ))}
+        </Card>
+      ) : !profile ? (
+        <Card>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold">Application status</h2>
+            <Badge color={APPLICATION_STATUS_COLOR[application.status]}>
+              {application.status.replace("_", " ")}
+            </Badge>
           </div>
-        )}
-      </section>
+          <p className="mt-2 text-sm text-slate-600">
+            Your requested rate: {moneyHr(application.targetPayRate)}.
+          </p>
+          {application.status === "REJECTED" ? (
+            <>
+              {application.adminNotes && (
+                <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                  {application.adminNotes}
+                </p>
+              )}
+              <div className="mt-3">
+                <ButtonLink href="/sitter/apply" variant="secondary">
+                  Update &amp; re-apply
+                </ButtonLink>
+              </div>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">
+              We&apos;ll email you once our team has reviewed your application.
+            </p>
+          )}
+        </Card>
+      ) : (
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-semibold">You&apos;re vetted</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Your listed rate is {moneyHr(profile.listedPayRate)} (set by
+                Sitbaby). Your original proposal was{" "}
+                {moneyHr(application.targetPayRate)}.
+              </p>
+            </div>
+            <Badge color={profile.isListed ? "green" : "amber"}>
+              {profile.isListed ? "Listed — bookable" : "Not currently listed"}
+            </Badge>
+          </div>
+          {!profile.isListed && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Only Sitbaby can list you. You can still set your availability now
+              so you&apos;re ready when we list you.
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap gap-3">
+            <ButtonLink href="/sitter/availability">
+              Manage availability ({profile.slots.length} open)
+            </ButtonLink>
+            {profile.stripeAccountId ? (
+              <Badge color="green">Payouts connected</Badge>
+            ) : (
+              <ActionButton action={connectStripe} variant="secondary">
+                Connect payouts (Stripe)
+              </ActionButton>
+            )}
+          </div>
+        </Card>
+      )}
 
+      {/* Bookings */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Your bookings</h2>
+        <h2 className="mb-3 font-semibold">Your bookings</h2>
         {bookings.length === 0 ? (
           <EmptyState>No bookings yet.</EmptyState>
         ) : (
           <div className="space-y-3">
             {bookings.map((b) => (
-              <Link key={b.id} href={`/bookings/${b.id}`} className="block">
-                <Card className="flex items-center justify-between hover:border-indigo-300">
+              <Card key={b.id}>
+                <div className="flex items-center justify-between">
                   <div>
-                    <div className="font-medium">
-                      {b.parent.name} · {b.numberOfChildren} child(ren)
-                    </div>
-                    <div className="text-sm text-slate-500">
+                    <p className="font-medium">
                       {dt(b.dateTime)} · {b.durationHours}h
-                    </div>
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      {b.parent.name} · {b.numberOfChildren} child(ren), ages{" "}
+                      {b.childrenAgeRange}
+                      {b.isLastMinute && (
+                        <span className="ml-2 text-amber-700">· last-minute</span>
+                      )}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      You earn {money(b.baseAmount + b.rushFeeAmount)}
+                    </p>
                   </div>
-                  <Badge color={BOOKING_STATUS_COLOR[b.status]}>
-                    {b.status}
-                  </Badge>
-                </Card>
-              </Link>
+                  <div className="flex flex-col items-end gap-2">
+                    <Badge color={BOOKING_STATUS_COLOR[b.status]}>
+                      {b.status}
+                    </Badge>
+                    <Link
+                      href={`/bookings/${b.id}`}
+                      className="text-sm font-medium text-indigo-600"
+                    >
+                      View
+                    </Link>
+                  </div>
+                </div>
+              </Card>
             ))}
           </div>
         )}

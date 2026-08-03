@@ -1,12 +1,28 @@
-import type { BookingStatus } from "@prisma/client";
+import type {
+  ApplicationStatus,
+  BookingStatus,
+  ReportStatus,
+} from "@prisma/client";
 
 type Color = "slate" | "green" | "amber" | "red" | "indigo";
 
 export const BOOKING_STATUS_COLOR: Record<BookingStatus, Color> = {
-  PENDING: "amber",
-  ACCEPTED: "indigo",
-  IN_PROGRESS: "indigo",
+  REQUESTED: "amber",
+  CONFIRMED: "indigo",
   COMPLETED: "green",
   CANCELLED: "slate",
-  EXPIRED: "red",
+};
+
+export const APPLICATION_STATUS_COLOR: Record<ApplicationStatus, Color> = {
+  APPLIED: "amber",
+  UNDER_REVIEW: "indigo",
+  VETTED: "green",
+  REJECTED: "red",
+};
+
+export const REPORT_STATUS_COLOR: Record<ReportStatus, Color> = {
+  OPEN: "amber",
+  INVESTIGATING: "indigo",
+  RESOLVED: "green",
+  DISMISSED: "slate",
 };

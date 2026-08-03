@@ -1,163 +1,159 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { PLACEHOLDER_TERMS_BODY, PLACEHOLDER_TERMS_VERSION } from "../src/lib/terms";
 
 const prisma = new PrismaClient();
 
 async function main() {
   const pw = await bcrypt.hash("password123", 10);
 
-  // Platform admin
-  await prisma.user.upsert({
-    where: { email: "admin@circlecare.test" },
+  // Business settings singleton + active placeholder terms.
+  await prisma.businessSettings.upsert({
+    where: { id: "singleton" },
     update: {},
+    create: { id: "singleton" },
+  });
+  await prisma.termsVersion.upsert({
+    where: { version: PLACEHOLDER_TERMS_VERSION },
+    update: { active: true },
     create: {
-      email: "admin@circlecare.test",
-      name: "Platform Admin",
+      version: PLACEHOLDER_TERMS_VERSION,
+      body: PLACEHOLDER_TERMS_BODY,
+      active: true,
+    },
+  });
+
+  // Sitbaby admin
+  await prisma.user.upsert({
+    where: { email: "admin@sitbaby.test" },
+    update: { role: "ADMIN" },
+    create: {
+      email: "admin@sitbaby.test",
+      name: "Sitbaby Admin",
       passwordHash: pw,
-      role: "PLATFORM_ADMIN",
+      role: "ADMIN",
     },
   });
 
-  // Seed community partner — FaezSports (the first partner onboarded via the
-  // generic partner flow; nothing FaezSports-specific is hardcoded).
-  const faez = await prisma.communityPartner.upsert({
-    where: { id: "seed-faezsports" },
-    update: { status: "APPROVED" },
-    create: {
-      id: "seed-faezsports",
-      name: "FaezSports",
-      type: "SPORTS_LEAGUE",
-      status: "APPROVED",
-      city: "Durham",
-      description:
-        "GTA/Durham community sports league — CircleCare's founding community partner.",
-    },
-  });
-
-  // Community admin for FaezSports
+  // Parent
   await prisma.user.upsert({
-    where: { email: "faez.admin@circlecare.test" },
+    where: { email: "parent@sitbaby.test" },
     update: {},
     create: {
-      email: "faez.admin@circlecare.test",
-      name: "Faez Admin",
-      passwordHash: pw,
-      role: "COMMUNITY_ADMIN",
-      affiliations: {
-        create: {
-          communityPartnerId: faez.id,
-          role: "ADMIN",
-          status: "APPROVED",
-        },
-      },
-    },
-  });
-
-  // Parent affiliated with FaezSports
-  await prisma.user.upsert({
-    where: { email: "parent@circlecare.test" },
-    update: {},
-    create: {
-      email: "parent@circlecare.test",
+      email: "parent@sitbaby.test",
       name: "Aisha Parent",
       passwordHash: pw,
       role: "PARENT",
       phone: "+1-905-555-0100",
-      parentProfile: {
-        create: {
-          city: "Ajax",
-          address: "12 Community Way, Ajax ON",
-          lat: 43.85,
-          lng: -79.02,
-        },
-      },
-      affiliations: {
-        create: {
-          communityPartnerId: faez.id,
-          role: "MEMBER",
-          status: "APPROVED",
-        },
-      },
+      parentProfile: { create: { city: "Ajax", address: "12 Maple St, Ajax ON" } },
     },
   });
 
-  // Community-endorsed sitter
-  const endorsed = await prisma.user.upsert({
-    where: { email: "sitter.endorsed@circlecare.test" },
+  // Sitter #1 — vetted AND listed, with an open availability slot in the future.
+  const listed = await prisma.user.upsert({
+    where: { email: "sitter.listed@sitbaby.test" },
     update: {},
     create: {
-      email: "sitter.endorsed@circlecare.test",
-      name: "Mariam Endorsed",
+      email: "sitter.listed@sitbaby.test",
+      name: "Mariam Listed",
       passwordHash: pw,
       role: "SITTER",
-      sitterProfile: {
+      application: {
         create: {
-          bio: "Early-childhood educator, 6 years experience. FaezSports volunteer.",
-          hourlyRate: 22,
-          serviceRadiusKm: 20,
-          isAvailableNow: true,
-          verificationStatus: "PLATFORM_VERIFIED",
-          languages: ["English", "Arabic"],
-          certifications: ["First Aid", "CPR"],
-          city: "Ajax",
-          lat: 43.86,
-          lng: -79.03,
+          bio: "Early-childhood educator, 6 years experience.",
+          experience: "Nanny for two families, daycare assistant.",
+          certifications: ["CPR", "First Aid"],
+          documentUrls: ["https://example.com/mariam-cpr.pdf"],
+          targetPayRate: 22,
+          status: "VETTED",
+          reviewedAt: new Date(),
         },
       },
-      affiliations: {
+      sitterProfile: {
         create: {
-          communityPartnerId: faez.id,
-          role: "MEMBER",
-          status: "APPROVED",
+          bio: "Early-childhood educator, 6 years experience.",
+          city: "Ajax",
+          listedPayRate: 25,
+          isListed: true,
         },
       },
     },
     include: { sitterProfile: true },
   });
-  if (endorsed.sitterProfile) {
-    await prisma.endorsement.upsert({
-      where: {
-        sitterProfileId_communityPartnerId: {
-          sitterProfileId: endorsed.sitterProfile.id,
-          communityPartnerId: faez.id,
-        },
-      },
-      update: { status: "APPROVED" },
-      create: {
-        sitterProfileId: endorsed.sitterProfile.id,
-        communityPartnerId: faez.id,
-        status: "APPROVED",
-      },
+  if (listed.sitterProfile) {
+    const start = new Date(Date.now() + 3 * 24 * 3600 * 1000);
+    start.setHours(18, 0, 0, 0);
+    const end = new Date(start.getTime() + 4 * 3600 * 1000);
+    const existing = await prisma.availabilitySlot.findFirst({
+      where: { sitterProfileId: listed.sitterProfile.id },
     });
+    if (!existing) {
+      await prisma.availabilitySlot.create({
+        data: {
+          sitterProfileId: listed.sitterProfile.id,
+          startTime: start,
+          endTime: end,
+        },
+      });
+    }
   }
 
-  // Platform-verified-only sitter (no community endorsement)
+  // Sitter #2 — vetted but NOT listed (must stay hidden from parents).
   await prisma.user.upsert({
-    where: { email: "sitter.platform@circlecare.test" },
+    where: { email: "sitter.unlisted@sitbaby.test" },
     update: {},
     create: {
-      email: "sitter.platform@circlecare.test",
-      name: "Jordan Verified",
+      email: "sitter.unlisted@sitbaby.test",
+      name: "Jordan Unlisted",
       passwordHash: pw,
       role: "SITTER",
+      application: {
+        create: {
+          bio: "Reliable weekend sitter.",
+          experience: "Weekend babysitting for neighbours.",
+          certifications: ["First Aid"],
+          documentUrls: [],
+          targetPayRate: 18,
+          status: "VETTED",
+          reviewedAt: new Date(),
+        },
+      },
       sitterProfile: {
         create: {
-          bio: "Reliable weekend sitter. Background check on file.",
-          hourlyRate: 18,
-          serviceRadiusKm: 25,
-          isAvailableNow: true,
-          verificationStatus: "PLATFORM_VERIFIED",
-          languages: ["English"],
-          certifications: ["First Aid"],
+          bio: "Reliable weekend sitter.",
           city: "Whitby",
-          lat: 43.9,
-          lng: -78.94,
+          listedPayRate: 20,
+          isListed: false,
         },
       },
     },
   });
 
-  console.log("Seed complete. Login with any *@circlecare.test / password123");
+  // Sitter #3 — application awaiting review (no profile yet).
+  await prisma.user.upsert({
+    where: { email: "sitter.applicant@sitbaby.test" },
+    update: {},
+    create: {
+      email: "sitter.applicant@sitbaby.test",
+      name: "Sam Applicant",
+      passwordHash: pw,
+      role: "SITTER",
+      application: {
+        create: {
+          bio: "New to Sitbaby, lots of family childcare experience.",
+          experience: "Cared for younger siblings and cousins for years.",
+          certifications: ["CPR"],
+          documentUrls: ["https://example.com/sam-cpr.pdf"],
+          targetPayRate: 19,
+          status: "APPLIED",
+        },
+      },
+    },
+  });
+
+  console.log(
+    "Seed complete. Login with any *@sitbaby.test / password123 (admin@, parent@, sitter.listed@, sitter.unlisted@, sitter.applicant@)",
+  );
 }
 
 main()

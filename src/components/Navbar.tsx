@@ -5,8 +5,7 @@ import { SignOutButton } from "@/components/SignOutButton";
 const ROLE_HOME: Record<string, string> = {
   PARENT: "/parent",
   SITTER: "/sitter",
-  COMMUNITY_ADMIN: "/community",
-  PLATFORM_ADMIN: "/admin",
+  ADMIN: "/admin",
 };
 
 export async function Navbar() {
@@ -17,7 +16,7 @@ export async function Navbar() {
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg">
           <span className="inline-block h-6 w-6 rounded-full bg-indigo-600" />
-          CircleCare
+          Sitbaby
         </Link>
         <nav className="flex items-center gap-4 text-sm">
           {session?.user ? (

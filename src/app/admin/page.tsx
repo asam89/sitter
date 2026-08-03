@@ -1,188 +1,243 @@
-import { requireRole } from "@/lib/session";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/session";
 import {
-  PageTitle,
-  Card,
   Badge,
-  EmptyState,
   ButtonLink,
+  Card,
+  EmptyState,
+  PageTitle,
 } from "@/components/ui";
-import { dt, money } from "@/lib/format";
+import { BOOKING_STATUS_COLOR, REPORT_STATUS_COLOR } from "@/lib/status";
+import { dt, money, moneyHr } from "@/lib/format";
 import {
-  DecidePartner,
-  DecideDocument,
-  ReportStatusControl,
+  ListingToggle,
+  ReportControls,
+  SuspendButton,
 } from "./AdminControls";
 
 export const dynamic = "force-dynamic";
 
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <Card>
+      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-sm text-slate-500">{label}</p>
+    </Card>
+  );
+}
+
 export default async function AdminDashboard() {
-  await requireRole("PLATFORM_ADMIN");
+  await requireRole("ADMIN");
 
   const [
-    pendingPartners,
-    pendingDocs,
+    pendingApps,
+    sitters,
+    listedCount,
+    bookings,
     reports,
-    activeSitters,
-    parents,
-    bookingCount,
-    completed,
-    endorsedCount,
-    platformVerifiedCount,
+    revenueAgg,
+    rushBookings,
   ] = await Promise.all([
-    prisma.communityPartner.findMany({
-      where: { status: "PENDING" },
+    prisma.sitterApplication.count({
+      where: { status: { in: ["APPLIED", "UNDER_REVIEW"] } },
+    }),
+    prisma.sitterProfile.findMany({
+      include: {
+        user: { select: { id: true, name: true, suspended: true } },
+      },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.verificationDocument.findMany({
-      where: { reviewStatus: "PENDING" },
+    prisma.sitterProfile.count({ where: { isListed: true } }),
+    prisma.booking.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 8,
       include: {
-        sitterProfile: { include: { user: { select: { name: true } } } },
+        parent: { select: { name: true } },
+        sitter: { select: { name: true } },
       },
     }),
     prisma.report.findMany({
       orderBy: { createdAt: "desc" },
-      take: 30,
-      include: { reporter: { select: { name: true } } },
+      include: {
+        reporter: { select: { name: true } },
+        booking: {
+          select: {
+            id: true,
+            parent: { select: { name: true } },
+            sitter: { select: { name: true } },
+          },
+        },
+      },
     }),
-    prisma.sitterProfile.count({ where: { isAvailableNow: true } }),
-    prisma.user.count({ where: { role: "PARENT" } }),
-    prisma.booking.count(),
-    prisma.booking.findMany({
-      where: { status: "COMPLETED" },
-      select: { totalAmount: true, platformFeeAmount: true },
+    prisma.booking.aggregate({
+      where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+      _sum: { totalAmount: true, platformFeeAmount: true, rushFeeAmount: true },
     }),
-    prisma.sitterProfile.count({
-      where: { endorsements: { some: { status: "APPROVED" } } },
-    }),
-    prisma.sitterProfile.count({
-      where: { verificationStatus: "PLATFORM_VERIFIED" },
+    prisma.booking.count({
+      where: { isLastMinute: true, status: { in: ["CONFIRMED", "COMPLETED"] } },
     }),
   ]);
 
-  const gmv = completed.reduce((s, b) => s + b.totalAmount, 0);
-  const feeRevenue = completed.reduce((s, b) => s + b.platformFeeAmount, 0);
+  const bookedRevenue = revenueAgg._sum.totalAmount ?? 0;
+  const feeRevenue = revenueAgg._sum.platformFeeAmount ?? 0;
+  const rushRevenue = revenueAgg._sum.rushFeeAmount ?? 0;
+  const openReports = reports.filter((r) => r.status === "OPEN");
 
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <PageTitle title="Platform Admin" />
-        <ButtonLink href="/admin/settings" variant="secondary">
-          Platform settings
-        </ButtonLink>
+        <PageTitle title="Admin dashboard" subtitle="Sitbaby operations." />
+        <div className="flex gap-2">
+          <ButtonLink href="/admin/applications" variant="secondary">
+            Applications ({pendingApps})
+          </ButtonLink>
+          <ButtonLink href="/admin/settings" variant="secondary">
+            Business rules
+          </ButtonLink>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Available sitters" value={String(activeSitters)} />
-        <Stat label="Parents" value={String(parents)} />
-        <Stat label="Bookings" value={String(bookingCount)} />
-        <Stat label="GMV" value={money(gmv)} />
-        <Stat label="Fee revenue" value={money(feeRevenue)} />
-        <Stat label="Community-endorsed sitters" value={String(endorsedCount)} />
-        <Stat
-          label="Platform-verified sitters"
-          value={String(platformVerifiedCount)}
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Metric label="Pending applications" value={String(pendingApps)} />
+        <Metric
+          label="Listed / vetted sitters"
+          value={`${listedCount} / ${sitters.length}`}
         />
-      </div>
+        <Metric label="Booked revenue (GMV)" value={money(bookedRevenue)} />
+        <Metric
+          label="Platform / rush revenue"
+          value={`${money(feeRevenue)} / ${money(rushRevenue)}`}
+        />
+      </section>
 
+      {/* Sitter listing control */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold">
-          Community Partner applications
-        </h2>
-        {pendingPartners.length === 0 ? (
-          <EmptyState>No pending partner applications.</EmptyState>
+        <h2 className="mb-3 font-semibold">Vetted sitters — listing control</h2>
+        {sitters.length === 0 ? (
+          <EmptyState>No vetted sitters yet.</EmptyState>
         ) : (
-          <div className="space-y-3">
-            {pendingPartners.map((p) => (
-              <Card key={p.id} className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium">{p.name}</div>
-                  <div className="text-sm text-slate-500">
-                    {p.type} {p.city ? `· ${p.city}` : ""}
-                  </div>
-                  {p.description && (
-                    <p className="mt-1 text-sm text-slate-600">
-                      {p.description}
+          <div className="space-y-2">
+            {sitters.map((sp) => (
+              <Card key={sp.id}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">
+                      {sp.user.name}{" "}
+                      <span className="text-sm text-slate-400">
+                        {moneyHr(sp.listedPayRate)}
+                      </span>
                     </p>
-                  )}
-                </div>
-                <DecidePartner partnerId={p.id} />
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">
-          Verification documents to review
-        </h2>
-        {pendingDocs.length === 0 ? (
-          <EmptyState>No documents pending review.</EmptyState>
-        ) : (
-          <div className="space-y-3">
-            {pendingDocs.map((d) => (
-              <Card key={d.id} className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium">
-                    {d.sitterProfile.user.name}
+                    <div className="mt-1 flex items-center gap-2">
+                      <Badge color={sp.isListed ? "green" : "amber"}>
+                        {sp.isListed ? "Listed" : "Unlisted"}
+                      </Badge>
+                      {sp.user.suspended && <Badge color="red">Suspended</Badge>}
+                    </div>
                   </div>
-                  <div className="text-sm text-slate-500">
-                    {d.type} ·{" "}
-                    <a
-                      href={d.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-indigo-600 underline"
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/admin/sitters/${sp.id}`}
+                      className="text-sm font-medium text-indigo-600"
                     >
-                      view document
-                    </a>
+                      Availability
+                    </Link>
+                    <ListingToggle
+                      sitterProfileId={sp.id}
+                      isListed={sp.isListed}
+                    />
+                    <SuspendButton
+                      userId={sp.user.id}
+                      suspended={sp.user.suspended}
+                    />
                   </div>
                 </div>
-                <DecideDocument documentId={d.id} />
               </Card>
             ))}
           </div>
         )}
       </section>
 
+      {/* Reports */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Reports queue</h2>
+        <h2 className="mb-3 font-semibold">
+          Reports {openReports.length > 0 && `(${openReports.length} open)`}
+        </h2>
         {reports.length === 0 ? (
           <EmptyState>No reports.</EmptyState>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {reports.map((r) => (
-              <Card key={r.id} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Badge color="red">{r.status}</Badge>
-                  <span className="text-xs text-slate-400">
-                    {dt(r.createdAt)}
-                  </span>
+              <Card key={r.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm">{r.reason}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      by {r.reporter.name} · booking{" "}
+                      {r.booking.parent.name} / {r.booking.sitter.name} ·{" "}
+                      {dt(r.createdAt)}
+                    </p>
+                    <Link
+                      href={`/bookings/${r.booking.id}`}
+                      className="text-xs font-medium text-indigo-600"
+                    >
+                      View booking
+                    </Link>
+                  </div>
+                  <Badge color={REPORT_STATUS_COLOR[r.status]}>{r.status}</Badge>
                 </div>
-                <p className="text-sm text-slate-700">{r.reason}</p>
-                <div className="text-xs text-slate-500">
-                  {r.targetType} · reported by {r.reporter.name}
-                </div>
-                <ReportStatusControl
-                  reportId={r.id}
-                  targetType={r.targetType}
-                  targetId={r.targetId}
-                />
+                {r.status !== "RESOLVED" && r.status !== "DISMISSED" && (
+                  <div className="mt-2">
+                    <ReportControls reportId={r.id} />
+                  </div>
+                )}
               </Card>
             ))}
           </div>
         )}
       </section>
-    </div>
-  );
-}
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-sm text-slate-500">{label}</div>
-    </Card>
+      {/* Recent bookings */}
+      <section>
+        <h2 className="mb-3 font-semibold">Recent bookings</h2>
+        {bookings.length === 0 ? (
+          <EmptyState>No bookings yet.</EmptyState>
+        ) : (
+          <div className="space-y-2">
+            {bookings.map((b) => (
+              <Card key={b.id}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {b.parent.name} → {b.sitter.name}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {dt(b.dateTime)} · {money(b.totalAmount)}
+                      {b.isLastMinute && (
+                        <span className="ml-1 text-amber-700">· rush</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge color={BOOKING_STATUS_COLOR[b.status]}>
+                      {b.status}
+                    </Badge>
+                    <Link
+                      href={`/bookings/${b.id}`}
+                      className="text-sm font-medium text-indigo-600"
+                    >
+                      View
+                    </Link>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-xs text-slate-400">
+          {rushBookings} paid/completed booking(s) carried a rush fee.
+        </p>
+      </section>
+    </div>
   );
 }
