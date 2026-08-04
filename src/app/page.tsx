@@ -100,6 +100,25 @@ export default async function Home() {
         ))}
       </section>
 
+      <section className="flex flex-col items-start justify-between gap-4 rounded-xl border border-brand-teal/10 bg-white p-6 md:flex-row md:items-center">
+        <div>
+          <h3 className="text-lg font-semibold text-brand-ink">
+            The people behind the vetting
+          </h3>
+          <p className="mt-1 max-w-xl text-sm text-brand-teal-light">
+            Every applicant is reviewed and interviewed by our team of ECEs,
+            OCT-certified teachers, and trusted community members before they
+            can be listed.
+          </p>
+        </div>
+        <Link
+          href="/team"
+          className="shrink-0 rounded-lg border border-brand-teal/40 px-5 py-2.5 font-semibold text-brand-teal hover:bg-brand-teal hover:text-white"
+        >
+          Meet our team
+        </Link>
+      </section>
+
       <section className="rounded-xl border border-brand-teal/10 bg-white p-6 text-sm text-brand-teal-light">
         Ri&apos;aya Babysitters vets and lists babysitters as a scheduling
         service. Sitters are independent contractors, not Ri&apos;aya employees,
