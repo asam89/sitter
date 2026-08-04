@@ -34,15 +34,27 @@ export const vetSchema = z.object({
   adminNotes: z.string().max(2000).optional().or(z.literal("")),
 });
 
+const lastMinuteEligible = z
+  .union([z.literal("on"), z.literal("true"), z.literal(""), z.boolean()])
+  .optional()
+  .transform((v) => v === "on" || v === "true" || v === true);
+
 export const slotSchema = z
   .object({
     startTime: z.string().min(1),
     endTime: z.string().min(1),
+    isLastMinuteEligible: lastMinuteEligible,
   })
   .refine((v) => new Date(v.endTime) > new Date(v.startTime), {
     message: "End time must be after start time.",
     path: ["endTime"],
   });
+
+export const reviewSchema = z.object({
+  bookingId: z.string().min(1),
+  rating: z.coerce.number().int().min(1).max(5),
+  comment: z.string().max(2000).optional().or(z.literal("")),
+});
 
 export const bookingSchema = z.object({
   slotId: z.string().min(1),
@@ -76,6 +88,17 @@ export const settingsSchema = z.object({
     "LEVEL_1_CONTACT",
     "LEVEL_2_IDENTITY",
   ]),
+  completionConfirmedBy: z.enum(["PARENT", "ADMIN"]),
+  notifySmsEnabled: z
+    .union([z.literal("on"), z.literal("true"), z.literal(""), z.boolean()])
+    .optional()
+    .transform((v) => v === "on" || v === "true" || v === true),
+  notifyWhatsappEnabled: z
+    .union([z.literal("on"), z.literal("true"), z.literal(""), z.boolean()])
+    .optional()
+    .transform((v) => v === "on" || v === "true" || v === true),
+  cancellationWindowHours: z.coerce.number().int().min(0).max(336),
+  cancellationChargePercent: z.coerce.number().int().min(0).max(100),
 });
 
 // --- Parent KYC ---
