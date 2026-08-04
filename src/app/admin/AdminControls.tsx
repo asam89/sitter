@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  moveApplicationToInterview,
   moveApplicationUnderReview,
   rejectApplication,
   setListed,
@@ -71,12 +72,53 @@ export function ApplicationReview({
   applicationId,
   status,
   targetPayRate,
+  interviewScheduledAt,
+  interviewNotes,
 }: {
   applicationId: string;
-  status: "APPLIED" | "UNDER_REVIEW" | "VETTED" | "REJECTED";
+  status: "APPLIED" | "UNDER_REVIEW" | "INTERVIEW" | "VETTED" | "REJECTED";
   targetPayRate: number;
+  interviewScheduledAt?: string | null;
+  interviewNotes?: string | null;
 }) {
-  const [mode, setMode] = useState<"none" | "vet" | "reject">("none");
+  const [mode, setMode] = useState<"none" | "vet" | "reject" | "interview">(
+    "none",
+  );
+
+  if (mode === "interview")
+    return (
+      <form action={moveApplicationToInterview} className="space-y-2">
+        <input type="hidden" name="applicationId" value={applicationId} />
+        <label className="block text-sm font-medium">
+          Interview time (optional — shown to the applicant)
+          <input
+            type="datetime-local"
+            name="interviewScheduledAt"
+            defaultValue={interviewScheduledAt ?? ""}
+            className={inputCls}
+          />
+        </label>
+        <textarea
+          name="interviewNotes"
+          placeholder="Internal interview notes (optional)"
+          rows={2}
+          defaultValue={interviewNotes ?? ""}
+          className={inputCls}
+        />
+        <div className="flex gap-2">
+          <button type="submit" className={buttonClass()}>
+            Move to interview
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("none")}
+            className={buttonClass("secondary")}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
 
   if (mode === "vet")
     return (
@@ -148,6 +190,22 @@ export function ApplicationReview({
         >
           Start review
         </ActionButton>
+      )}
+      {status !== "INTERVIEW" && (
+        <button
+          onClick={() => setMode("interview")}
+          className={buttonClass("secondary")}
+        >
+          Schedule interview
+        </button>
+      )}
+      {status === "INTERVIEW" && (
+        <button
+          onClick={() => setMode("interview")}
+          className={buttonClass("secondary")}
+        >
+          Update interview
+        </button>
       )}
       <button onClick={() => setMode("vet")} className={buttonClass()}>
         Vet &amp; list rate

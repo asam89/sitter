@@ -40,7 +40,7 @@ export default async function AdminDashboard() {
     rushBookings,
   ] = await Promise.all([
     prisma.sitterApplication.count({
-      where: { status: { in: ["APPLIED", "UNDER_REVIEW"] } },
+      where: { status: { in: ["APPLIED", "UNDER_REVIEW", "INTERVIEW"] } },
     }),
     prisma.sitterProfile.findMany({
       include: {

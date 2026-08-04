@@ -74,8 +74,8 @@ export function SignupForm() {
         {role === "SITTER" && (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
             After signing up you&apos;ll complete a vetting application. The
-            Ri&apos;aya team reviews every applicant before you can be listed and
-            booked.
+            Ri&apos;aya team reviews every applicant and holds a short interview
+            before you can be listed and booked.
           </p>
         )}
 

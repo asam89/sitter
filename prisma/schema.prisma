@@ -24,6 +24,7 @@ enum Role {
 enum ApplicationStatus {
   APPLIED
   UNDER_REVIEW
+  INTERVIEW
   VETTED
   REJECTED
 }
@@ -205,6 +206,12 @@ model SitterApplication {
   reviewedByAdminId String?
   reviewedAt        DateTime?
   adminNotes        String?
+  // Interview stage: an applicant enters INTERVIEW when the Admin team wants to
+  // meet them before vetting. interviewScheduledAt is optional (set only if the
+  // team books a specific time the applicant can see); interviewNotes are the
+  // internal write-up the reviewers record before deciding.
+  interviewScheduledAt DateTime?
+  interviewNotes       String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
