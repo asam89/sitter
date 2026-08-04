@@ -124,6 +124,7 @@ model User {
   messages            Message[]
   reportsMade         Report[]            @relation("Reporter")
   verificationCodes   VerificationCode[]
+  passwordResetTokens PasswordResetToken[]
   idDocsReviewed      IdVerificationDocument[] @relation("IdDocReviewer")
   notifications       Notification[]      @relation("UserNotifications")
   reviewsWritten      Review[]            @relation("ReviewsWritten")
@@ -144,6 +145,21 @@ model VerificationCode {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, channel])
+}
+
+// Single-use, time-limited password reset tokens. Only the SHA-256 hash of the
+// token is stored; the raw token lives only in the emailed reset link.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model ParentProfile {

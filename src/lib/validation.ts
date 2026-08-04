@@ -14,6 +14,19 @@ export const registerSchema = z
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 
+export const passwordResetRequestSchema = z
+  .object({
+    email: z.string().email(),
+  })
+  .strict();
+
+export const passwordResetConfirmSchema = z
+  .object({
+    token: z.string().min(1),
+    password: z.string().min(8).max(200),
+  })
+  .strict();
+
 const linesToArray = (v: string) =>
   v
     .split(/[\n,]/)
