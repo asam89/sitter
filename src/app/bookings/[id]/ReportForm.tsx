@@ -17,7 +17,7 @@ export function ReportForm({ bookingId }: { bookingId: string }) {
   if (done)
     return (
       <p className="text-sm text-emerald-700">
-        Report submitted. The Sitbaby team will review it.
+        Report submitted. The Ri&apos;aya team will review it.
       </p>
     );
 

@@ -25,8 +25,32 @@ export default async function ParentDashboard() {
     <div className="space-y-6">
       <PageTitle
         title={`Hi, ${user.name}`}
-        subtitle="Book a vetted Sitbaby sitter around your schedule."
+        subtitle="Book a vetted Ri'aya sitter around your schedule."
       />
+
+      <div className="rounded-xl bg-brand-teal p-5 text-white shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand-coral" />
+          <h2 className="text-sm font-semibold uppercase tracking-wide">
+            Your peace of mind
+          </h2>
+        </div>
+        <ul className="mt-3 grid gap-2 text-sm text-brand-blue-light sm:grid-cols-2">
+          {[
+            "Every sitter is manually vetted & hand-listed by our team.",
+            "A liability waiver + itemised pricing on every booking.",
+            "Secure in-app messaging — no numbers exchanged.",
+            "We never store your child's full name or photo.",
+          ].map((line) => (
+            <li key={line} className="flex gap-2">
+              <span aria-hidden className="font-bold text-white">
+                ✓
+              </span>
+              <span>{line}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       <Card className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -43,7 +67,7 @@ export default async function ParentDashboard() {
         {bookings.length === 0 ? (
           <EmptyState>
             No bookings yet.{" "}
-            <Link href="/parent/schedule" className="text-indigo-600">
+            <Link href="/parent/schedule" className="text-brand-coral">
               Browse availability
             </Link>
             .
@@ -73,7 +97,7 @@ export default async function ParentDashboard() {
                     </Badge>
                     <Link
                       href={`/bookings/${b.id}`}
-                      className="text-sm font-medium text-indigo-600"
+                      className="text-sm font-medium text-brand-coral"
                     >
                       View
                     </Link>

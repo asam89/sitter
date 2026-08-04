@@ -39,7 +39,7 @@ export default async function SitterDashboard() {
         <Card>
           <h2 className="font-semibold">Get vetted to start sitting</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Every Sitbaby sitter is manually vetted by our team before they can
+            Every Ri&apos;aya sitter is manually vetted by our team before they can
             be listed and booked.
           </p>
           <div className="mt-3">
@@ -83,7 +83,7 @@ export default async function SitterDashboard() {
               <h2 className="font-semibold">You&apos;re vetted</h2>
               <p className="mt-1 text-sm text-slate-600">
                 Your listed rate is {moneyHr(profile.listedPayRate)} (set by
-                Sitbaby). Your original proposal was{" "}
+                Ri&apos;aya). Your original proposal was{" "}
                 {moneyHr(application.targetPayRate)}.
               </p>
             </div>
@@ -93,7 +93,7 @@ export default async function SitterDashboard() {
           </div>
           {!profile.isListed && (
             <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Only Sitbaby can list you. You can still set your availability now
+              Only Ri&apos;aya can list you. You can still set your availability now
               so you&apos;re ready when we list you.
             </p>
           )}
@@ -143,7 +143,7 @@ export default async function SitterDashboard() {
                     </Badge>
                     <Link
                       href={`/bookings/${b.id}`}
-                      className="text-sm font-medium text-indigo-600"
+                      className="text-sm font-medium text-brand-coral"
                     >
                       View
                     </Link>

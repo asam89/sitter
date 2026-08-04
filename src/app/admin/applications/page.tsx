@@ -55,7 +55,7 @@ export default async function ApplicationsPage() {
                     </p>
                   )}
                   {a.documentUrls.length > 0 && (
-                    <ul className="mt-1 text-sm text-indigo-600">
+                    <ul className="mt-1 text-sm text-brand-coral">
                       {a.documentUrls.map((u) => (
                         <li key={u}>
                           <a href={u} target="_blank" rel="noreferrer">

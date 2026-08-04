@@ -87,7 +87,7 @@ export default async function AdminDashboard() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <PageTitle title="Admin dashboard" subtitle="Sitbaby operations." />
+        <PageTitle title="Admin dashboard" subtitle="Ri'aya operations." />
         <div className="flex gap-2">
           <ButtonLink href="/admin/applications" variant="secondary">
             Applications ({pendingApps})
@@ -138,7 +138,7 @@ export default async function AdminDashboard() {
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/admin/sitters/${sp.id}`}
-                      className="text-sm font-medium text-indigo-600"
+                      className="text-sm font-medium text-brand-coral"
                     >
                       Availability
                     </Link>
@@ -179,7 +179,7 @@ export default async function AdminDashboard() {
                     </p>
                     <Link
                       href={`/bookings/${r.booking.id}`}
-                      className="text-xs font-medium text-indigo-600"
+                      className="text-xs font-medium text-brand-coral"
                     >
                       View booking
                     </Link>
@@ -224,7 +224,7 @@ export default async function AdminDashboard() {
                     </Badge>
                     <Link
                       href={`/bookings/${b.id}`}
-                      className="text-sm font-medium text-indigo-600"
+                      className="text-sm font-medium text-brand-coral"
                     >
                       View
                     </Link>

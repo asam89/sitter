@@ -8,7 +8,7 @@ export default function SignupPage() {
   return (
     <div className="mx-auto max-w-lg">
       <PageTitle
-        title="Create your Sitbaby account"
+        title="Create your Ri'aya account"
         subtitle="Parents book instantly. Sitters apply to be vetted and listed."
       />
       <Suspense>

@@ -34,7 +34,7 @@ export default async function SchedulePage() {
     <div className="space-y-6">
       <PageTitle
         title="Available sitters"
-        subtitle="Every sitter here is vetted and listed by Sitbaby. Pick a time to book."
+        subtitle="Every sitter here is vetted and listed by Ri'aya. Pick a time to book."
       />
       {sitters.length === 0 ? (
         <EmptyState>No open availability right now — check back soon.</EmptyState>
@@ -61,7 +61,7 @@ export default async function SchedulePage() {
                     <Link
                       key={slot.id}
                       href={`/parent/book/${slot.id}`}
-                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-indigo-500 hover:bg-indigo-50"
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-brand-teal hover:bg-brand-cream"
                     >
                       {dt(slot.startTime)}
                       {rush && (

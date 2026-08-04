@@ -62,7 +62,7 @@ export function SignupForm() {
               className={
                 "rounded-lg border px-3 py-2 text-sm font-semibold " +
                 (role === r
-                  ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                  ? "border-brand-teal bg-brand-cream text-brand-teal"
                   : "border-slate-300 text-slate-600")
               }
             >
@@ -74,7 +74,7 @@ export function SignupForm() {
         {role === "SITTER" && (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
             After signing up you&apos;ll complete a vetting application. The
-            Sitbaby team reviews every applicant before you can be listed and
+            Ri&apos;aya team reviews every applicant before you can be listed and
             booked.
           </p>
         )}

@@ -29,7 +29,7 @@ export default async function AvailabilityPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <PageTitle
         title="Your availability"
-        subtitle="Add open time blocks. Parents can book these once Sitbaby has you listed."
+        subtitle="Add open time blocks. Parents can book these once Ri'aya has you listed."
       />
 
       <Card>
