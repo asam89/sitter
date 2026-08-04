@@ -52,6 +52,27 @@ enum ReportStatus {
   DISMISSED
 }
 
+// Parent account KYC tiers. Booking is gated on reaching an Admin-configured
+// minimum level (BusinessSettings.minParentVerificationLevelToBook).
+enum VerificationLevel {
+  LEVEL_0_REGISTERED // email + password only; can browse, cannot book
+  LEVEL_1_CONTACT    // email + phone verified
+  LEVEL_2_IDENTITY   // government ID verified + address on file
+}
+
+// Channel for a one-time verification code.
+enum VerificationChannel {
+  EMAIL
+  PHONE
+}
+
+// Manual ID-review lifecycle (used only on the manual-review MVP path).
+enum IdReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // ---------- Core ----------
 
 model User {
@@ -62,6 +83,12 @@ model User {
   role         Role     @default(PARENT)
   phone        String?
   suspended    Boolean  @default(false)
+
+  // --- KYC / verification ---
+  emailVerified     DateTime? // set when the email code is confirmed
+  phoneVerified     Boolean           @default(false)
+  verificationLevel VerificationLevel @default(LEVEL_0_REGISTERED)
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -74,17 +101,69 @@ model User {
   applicationsReviewed SitterApplication[] @relation("ApplicationReviewer")
   messages            Message[]
   reportsMade         Report[]            @relation("Reporter")
+  verificationCodes   VerificationCode[]
+  idDocsReviewed      IdVerificationDocument[] @relation("IdDocReviewer")
+}
+
+// Hashed one-time verification codes for email/phone. The raw code is never
+// stored; only a bcrypt hash. Rows are single-use (consumedAt) and expiring.
+model VerificationCode {
+  id        String              @id @default(cuid())
+  userId    String
+  channel   VerificationChannel
+  codeHash  String
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, channel])
 }
 
 model ParentProfile {
   id        String   @id @default(cuid())
   userId    String   @unique
-  address   String?
+  address   String? // legacy free-text; retained for existing data
   city      String?
+
+  // --- Service address (released to a sitter only on booking confirmation) ---
+  streetAddress String?
+  unit          String?
+  postalCode    String?
+  province      String?
+
+  // --- Identity verification ---
+  identityVerified      Boolean   @default(false)
+  verifiedName          String? // name as confirmed by ID review/provider
+  idVerificationProvider String? // e.g. "manual", "stripe_identity"
+  idVerifiedAt          DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idDocs IdVerificationDocument[]
+}
+
+// Uploaded government-ID document (manual-review MVP path). storagePath points
+// at a PRIVATE bucket/dir — never a public URL. The raw document is deleted
+// (deletedAt set, storagePath cleared) once verification passes.
+model IdVerificationDocument {
+  id              String         @id @default(cuid())
+  parentProfileId String
+  storagePath     String? // private path; cleared on deletion
+  reviewStatus    IdReviewStatus @default(PENDING)
+  reviewedByAdminId String?
+  reviewedAt      DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime       @default(now())
+
+  parentProfile ParentProfile @relation(fields: [parentProfileId], references: [id], onDelete: Cascade)
+  reviewedBy    User?         @relation("IdDocReviewer", fields: [reviewedByAdminId], references: [id])
+
+  @@index([reviewStatus])
+  @@index([parentProfileId])
 }
 
 // A sitter's application. targetPayRate is the sitter's *requested* rate — a
@@ -240,5 +319,10 @@ model BusinessSettings {
   rushFeeAmount            Int     @default(25) // percent, or flat CAD if FLAT
   platformFeeType          FeeType @default(PERCENT)
   platformFeeAmount        Int     @default(15) // percent, or flat CAD if FLAT
+
+  // Minimum parent verification level required to create a booking. Launch at
+  // LEVEL_1_CONTACT for low friction; tighten to LEVEL_2_IDENTITY when desired.
+  minParentVerificationLevelToBook VerificationLevel @default(LEVEL_1_CONTACT)
+
   updatedAt                DateTime @updatedAt
 }

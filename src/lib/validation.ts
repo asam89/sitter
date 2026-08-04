@@ -71,6 +71,34 @@ export const settingsSchema = z.object({
   rushFeeAmount: z.coerce.number().int().min(0).max(100000),
   platformFeeType: z.enum(["FLAT", "PERCENT"]),
   platformFeeAmount: z.coerce.number().int().min(0).max(100000),
+  minParentVerificationLevelToBook: z.enum([
+    "LEVEL_0_REGISTERED",
+    "LEVEL_1_CONTACT",
+    "LEVEL_2_IDENTITY",
+  ]),
+});
+
+// --- Parent KYC ---
+
+export const verifyCodeSchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code."),
+});
+
+// Phone can be (re)set at the contact-verification step.
+export const phoneSchema = z.object({
+  phone: z
+    .string()
+    .trim()
+    .min(7, "Enter a valid phone number.")
+    .max(40),
+});
+
+export const serviceAddressSchema = z.object({
+  streetAddress: z.string().trim().min(3, "Enter your street address.").max(200),
+  unit: z.string().trim().max(40).optional().or(z.literal("")),
+  city: z.string().trim().min(2, "Enter your city.").max(120),
+  province: z.string().trim().min(2, "Enter your province.").max(60),
+  postalCode: z.string().trim().min(3, "Enter your postal code.").max(12),
 });
 
 export { linesToArray };

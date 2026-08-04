@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
+import { getParentBookingEligibility } from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
 import { isLastMinute } from "@/lib/pricing";
 import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
@@ -9,7 +11,10 @@ import { dt, moneyHr } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function SchedulePage() {
-  await requireRole("PARENT");
+  const user = await requireRole("PARENT");
+  const eligibility = await getParentBookingEligibility(user.id);
+  // Booking is gated on verification level; send unverified parents to verify.
+  if (!eligibility.canBook) redirect("/parent/verify");
   const settings = await getBusinessSettings();
 
   // Only listed sitters (and only their non-suspended accounts) with future

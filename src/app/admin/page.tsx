@@ -92,6 +92,9 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/applications" variant="secondary">
             Applications ({pendingApps})
           </ButtonLink>
+          <ButtonLink href="/admin/parents" variant="secondary">
+            Parents
+          </ButtonLink>
           <ButtonLink href="/admin/settings" variant="secondary">
             Business rules
           </ButtonLink>
