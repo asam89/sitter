@@ -1,5 +1,6 @@
 import type {
   BusinessSettings,
+  CompletionConfirmer,
   FeeType,
   VerificationLevel,
 } from "@prisma/client";
@@ -51,6 +52,11 @@ export type BusinessSettingsInput = {
   platformFeeType: FeeType;
   platformFeeAmount: number;
   minParentVerificationLevelToBook: VerificationLevel;
+  completionConfirmedBy: CompletionConfirmer;
+  notifySmsEnabled: boolean;
+  notifyWhatsappEnabled: boolean;
+  cancellationWindowHours: number;
+  cancellationChargePercent: number;
 };
 
 export async function updateBusinessSettings(

@@ -71,11 +71,17 @@ export default async function AdminDashboard() {
       },
     }),
     prisma.booking.aggregate({
-      where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+      // Revenue is recognised once a booking is paid (escrow) — regardless of
+      // where it sits in the post-payment lifecycle.
+      where: { paidAt: { not: null }, status: { not: "CANCELLED" } },
       _sum: { totalAmount: true, platformFeeAmount: true, rushFeeAmount: true },
     }),
     prisma.booking.count({
-      where: { isLastMinute: true, status: { in: ["CONFIRMED", "COMPLETED"] } },
+      where: {
+        isLastMinute: true,
+        paidAt: { not: null },
+        status: { not: "CANCELLED" },
+      },
     }),
   ]);
 

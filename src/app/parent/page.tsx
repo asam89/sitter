@@ -24,6 +24,12 @@ export default async function ParentDashboard() {
     }),
     getParentBookingEligibility(user.id),
   ]);
+  const active = bookings.filter((b) =>
+    ["REQUESTED", "APPROVED", "IN_PROGRESS"].includes(b.status),
+  );
+  const past = bookings.filter((b) =>
+    ["COMPLETED", "DECLINED", "CANCELLED"].includes(b.status),
+  );
 
   return (
     <div className="space-y-6">
@@ -95,9 +101,9 @@ export default async function ParentDashboard() {
         </ButtonLink>
       </Card>
 
-      <section>
-        <h2 className="mb-3 font-semibold">Your bookings</h2>
-        {bookings.length === 0 ? (
+      {bookings.length === 0 ? (
+        <section>
+          <h2 className="mb-3 font-semibold">Your bookings</h2>
           <EmptyState>
             No bookings yet.{" "}
             <Link href="/parent/schedule" className="text-brand-coral">
@@ -105,42 +111,93 @@ export default async function ParentDashboard() {
             </Link>
             .
           </EmptyState>
-        ) : (
-          <div className="space-y-3">
-            {bookings.map((b) => (
-              <Card key={b.id}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">
-                      {dt(b.dateTime)} · {b.durationHours}h with {b.sitter.name}
-                    </p>
-                    <p className="text-sm text-slate-600">
-                      {b.numberOfChildren} child(ren), ages {b.childrenAgeRange}
-                      {b.isLastMinute && (
-                        <span className="ml-2 text-amber-700">· last-minute</span>
-                      )}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Total {money(b.totalAmount)}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <Badge color={BOOKING_STATUS_COLOR[b.status]}>
-                      {b.status}
-                    </Badge>
-                    <Link
-                      href={`/bookings/${b.id}`}
-                      className="text-sm font-medium text-brand-coral"
-                    >
-                      View
-                    </Link>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
+        </section>
+      ) : (
+        <>
+          <ParentBookingSection
+            title="Active"
+            bookings={active}
+            empty="No active bookings."
+          />
+          <ParentBookingSection
+            title="Past"
+            bookings={past}
+            empty="No past bookings."
+          />
+        </>
+      )}
     </div>
+  );
+}
+
+type ParentBooking = {
+  id: string;
+  dateTime: Date;
+  durationHours: number;
+  numberOfChildren: number;
+  childrenAgeRange: string;
+  isLastMinute: boolean;
+  totalAmount: number;
+  status: keyof typeof BOOKING_STATUS_COLOR;
+  sitter: { name: string };
+};
+
+const STATUS_HINT: Record<string, string> = {
+  REQUESTED: "Waiting for the sitter to approve",
+  APPROVED: "Approved — pay to confirm",
+  IN_PROGRESS: "In progress",
+  COMPLETED: "Completed",
+  DECLINED: "Declined — slot reopened",
+  CANCELLED: "Cancelled",
+};
+
+function ParentBookingSection({
+  title,
+  bookings,
+  empty,
+}: {
+  title: string;
+  bookings: ParentBooking[];
+  empty: string;
+}) {
+  return (
+    <section>
+      <h2 className="mb-3 font-semibold">{title}</h2>
+      {bookings.length === 0 ? (
+        <EmptyState>{empty}</EmptyState>
+      ) : (
+        <div className="space-y-3">
+          {bookings.map((b) => (
+            <Card key={b.id}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">
+                    {dt(b.dateTime)} · {b.durationHours}h with {b.sitter.name}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    {b.numberOfChildren} child(ren), ages {b.childrenAgeRange}
+                    {b.isLastMinute && (
+                      <span className="ml-2 text-amber-700">· last-minute</span>
+                    )}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Total {money(b.totalAmount)} · {STATUS_HINT[b.status]}
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <Badge color={BOOKING_STATUS_COLOR[b.status]}>{b.status}</Badge>
+                  <Link
+                    href={`/bookings/${b.id}`}
+                    className="text-sm font-medium text-brand-coral"
+                  >
+                    View
+                  </Link>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

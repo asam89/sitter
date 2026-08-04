@@ -116,6 +116,80 @@ export default async function AdminSettingsPage() {
             </p>
           </fieldset>
 
+          <fieldset className="rounded-lg border border-slate-200 p-3">
+            <legend className="px-1 text-sm font-semibold">
+              Booking lifecycle
+            </legend>
+            <label className="block text-sm font-medium">
+              Who confirms completion
+              <select
+                name="completionConfirmedBy"
+                defaultValue={s.completionConfirmedBy}
+                className={input}
+              >
+                <option value="PARENT">Parent confirms (Admin can too)</option>
+                <option value="ADMIN">Admin confirms</option>
+              </select>
+            </label>
+            <p className="mt-2 text-xs text-slate-500">
+              Completion releases the sitter payout and unlocks two-way reviews.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="block text-sm font-medium">
+                Cancellation window (hours)
+                <input
+                  type="number"
+                  name="cancellationWindowHours"
+                  min={0}
+                  max={336}
+                  defaultValue={s.cancellationWindowHours}
+                  className={input}
+                />
+              </label>
+              <label className="block text-sm font-medium">
+                Late-cancel charge (% of base)
+                <input
+                  type="number"
+                  name="cancellationChargePercent"
+                  min={0}
+                  max={100}
+                  defaultValue={s.cancellationChargePercent}
+                  className={input}
+                />
+              </label>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              A paid booking cancelled within this window incurs the charge.
+              Default 0% = no penalty.
+            </p>
+          </fieldset>
+
+          <fieldset className="rounded-lg border border-slate-200 p-3">
+            <legend className="px-1 text-sm font-semibold">
+              Sitter notification channels
+            </legend>
+            <p className="mb-2 text-xs text-slate-500">
+              Email is always sent. Toggle extra channels on once the provider
+              (e.g. Twilio) is configured — otherwise they run as dev stubs.
+            </p>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                name="notifySmsEnabled"
+                defaultChecked={s.notifySmsEnabled}
+              />
+              SMS
+            </label>
+            <label className="mt-2 flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                name="notifyWhatsappEnabled"
+                defaultChecked={s.notifyWhatsappEnabled}
+              />
+              WhatsApp
+            </label>
+          </fieldset>
+
           <button type="submit" className={buttonClass()}>
             Save business rules
           </button>

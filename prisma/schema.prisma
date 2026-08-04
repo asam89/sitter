@@ -34,10 +34,31 @@ enum SlotStatus {
 }
 
 enum BookingStatus {
-  REQUESTED // created, awaiting payment
-  CONFIRMED // paid; funds held in escrow
-  COMPLETED // marked complete; payout released to sitter
+  REQUESTED   // parent booked; slot held; awaiting sitter approval
+  APPROVED    // sitter approved at the Admin-set rate; address released; parent pays into escrow
+  DECLINED    // sitter declined; slot returned to OPEN
+  IN_PROGRESS // job underway (on/after the scheduled start)
+  COMPLETED   // marked complete; payout released to sitter
   CANCELLED
+}
+
+// Channel a booking notification was dispatched over.
+enum NotificationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  SENT
+  STUBBED // no provider configured; logged only (dev)
+  FAILED
+}
+
+// Who confirms a booking is complete (releases payout). Configurable per business.
+enum CompletionConfirmer {
+  PARENT
+  ADMIN
 }
 
 enum FeeType {
@@ -103,6 +124,9 @@ model User {
   reportsMade         Report[]            @relation("Reporter")
   verificationCodes   VerificationCode[]
   idDocsReviewed      IdVerificationDocument[] @relation("IdDocReviewer")
+  notifications       Notification[]      @relation("UserNotifications")
+  reviewsWritten      Review[]            @relation("ReviewsWritten")
+  reviewsReceived     Review[]            @relation("ReviewsReceived")
 }
 
 // Hashed one-time verification codes for email/phone. The raw code is never
@@ -218,6 +242,9 @@ model AvailabilitySlot {
   startTime       DateTime
   endTime         DateTime
   status          SlotStatus @default(OPEN)
+  // Sitter opts a slot in for last-minute work; a booking inside the
+  // configurable lead-time threshold still flags last-minute + adds the rush fee.
+  isLastMinuteEligible Boolean @default(false)
   createdAt       DateTime   @default(now())
 
   sitterProfile SitterProfile @relation(fields: [sitterProfileId], references: [id], onDelete: Cascade)
@@ -253,9 +280,15 @@ model Booking {
 
   status                BookingStatus @default(REQUESTED)
   stripePaymentIntentId String?
+  approvedAt            DateTime?
+  declinedAt            DateTime?
+  addressReleasedAt     DateTime? // set when the sitter approves and the address unlocks
   paidAt                DateTime?
+  startedAt             DateTime? // set when moved to IN_PROGRESS
   completedAt           DateTime?
   payoutReleasedAt      DateTime?
+  cancelledAt           DateTime?
+  cancellationChargeAmount Int @default(0) // partial charge applied on late cancellation
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -265,10 +298,48 @@ model Booking {
   availabilitySlot AvailabilitySlot @relation(fields: [availabilitySlotId], references: [id])
   messages        Message[]
   reports         Report[]
+  notifications   Notification[]
+  reviews         Review[]
 
   @@index([status])
   @@index([parentId])
   @@index([sitterId])
+}
+
+// Audit row for each booking notification dispatch attempt (per recipient/channel).
+model Notification {
+  id              String             @id @default(cuid())
+  bookingId       String
+  recipientUserId String
+  channel         NotificationChannel
+  status          NotificationStatus @default(SENT)
+  detail          String? // e.g. provider name, or stub note
+  sentAt          DateTime           @default(now())
+
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  recipient User    @relation("UserNotifications", fields: [recipientUserId], references: [id])
+
+  @@index([bookingId])
+  @@index([recipientUserId])
+}
+
+// Two-way review, unlocked only after a booking is COMPLETED. Each participant
+// (parent or sitter) may leave exactly one review per booking.
+model Review {
+  id         String   @id @default(cuid())
+  bookingId  String
+  authorId   String
+  subjectId  String // the user being reviewed
+  rating     Int // 1..5
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  author  User    @relation("ReviewsWritten", fields: [authorId], references: [id])
+  subject User    @relation("ReviewsReceived", fields: [subjectId], references: [id])
+
+  @@unique([bookingId, authorId])
+  @@index([subjectId])
 }
 
 model Message {
@@ -323,6 +394,18 @@ model BusinessSettings {
   // Minimum parent verification level required to create a booking. Launch at
   // LEVEL_1_CONTACT for low friction; tighten to LEVEL_2_IDENTITY when desired.
   minParentVerificationLevelToBook VerificationLevel @default(LEVEL_1_CONTACT)
+
+  // --- Booking lifecycle ---
+  // Who confirms completion (releases payout).
+  completionConfirmedBy CompletionConfirmer @default(PARENT)
+  // Notification channels beyond email (always on). Toggle on once a provider
+  // (e.g. Twilio) is configured; stubbed/logged until then.
+  notifySmsEnabled      Boolean @default(false)
+  notifyWhatsappEnabled Boolean @default(false)
+  // Cancellation policy: a cancellation by the parent within this many hours of
+  // the start incurs a partial charge (percent of base). Default 0% = no penalty.
+  cancellationWindowHours   Int @default(24)
+  cancellationChargePercent Int @default(0)
 
   updatedAt                DateTime @updatedAt
 }
