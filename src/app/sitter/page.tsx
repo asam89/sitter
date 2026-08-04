@@ -77,9 +77,18 @@ export default async function SitterDashboard() {
                 </ButtonLink>
               </div>
             </>
+          ) : application.status === "INTERVIEW" ? (
+            <p className="mt-2 rounded-lg bg-brand-cream px-3 py-2 text-sm text-brand-teal">
+              Our team would like to interview you
+              {application.interviewScheduledAt
+                ? ` on ${dt(application.interviewScheduledAt)}.`
+                : ". We\u2019ll reach out to arrange a time."}{" "}
+              This is the final step before we vet and list you.
+            </p>
           ) : (
             <p className="mt-2 text-sm text-slate-500">
               We&apos;ll email you once our team has reviewed your application.
+              Vetting includes a short interview with our reviewers.
             </p>
           )}
         </Card>

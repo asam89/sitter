@@ -18,6 +18,7 @@ export const BOOKING_STATUS_COLOR: Record<BookingStatus, Color> = {
 export const APPLICATION_STATUS_COLOR: Record<ApplicationStatus, Color> = {
   APPLIED: "amber",
   UNDER_REVIEW: "indigo",
+  INTERVIEW: "indigo",
   VETTED: "green",
   REJECTED: "red",
 };

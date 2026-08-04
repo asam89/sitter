@@ -50,6 +50,12 @@ export const slotSchema = z
     path: ["endTime"],
   });
 
+export const interviewSchema = z.object({
+  applicationId: z.string().min(1),
+  interviewScheduledAt: z.string().optional().or(z.literal("")),
+  interviewNotes: z.string().max(4000).optional().or(z.literal("")),
+});
+
 export const reviewSchema = z.object({
   bookingId: z.string().min(1),
   rating: z.coerce.number().int().min(1).max(5),

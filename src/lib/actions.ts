@@ -15,6 +15,7 @@ import type { BusinessSettings } from "@prisma/client";
 import {
   applicationSchema,
   bookingSchema,
+  interviewSchema,
   linesToArray,
   reportSchema,
   reviewSchema,
@@ -131,6 +132,8 @@ export async function submitApplication(fd: FormData) {
       status: "APPLIED",
       reviewedByAdminId: null,
       reviewedAt: null,
+      interviewScheduledAt: null,
+      interviewNotes: null,
     },
   });
   revalidatePath("/sitter");
@@ -226,6 +229,46 @@ export async function moveApplicationUnderReview(applicationId: string) {
   await prisma.sitterApplication.updateMany({
     where: { id: applicationId, status: "APPLIED" },
     data: { status: "UNDER_REVIEW" },
+  });
+  revalidatePath("/admin/applications");
+}
+
+// Move an applicant into the interview stage. An optional scheduled time is
+// surfaced to the applicant; notes are the reviewers' internal write-up.
+export async function moveApplicationToInterview(fd: FormData) {
+  await requireRole("ADMIN");
+  const parsed = interviewSchema.safeParse({
+    applicationId: s(fd, "applicationId"),
+    interviewScheduledAt: s(fd, "interviewScheduledAt"),
+    interviewNotes: s(fd, "interviewNotes"),
+  });
+  if (!parsed.success) throw new Error("Invalid interview input");
+  const { applicationId, interviewScheduledAt, interviewNotes } = parsed.data;
+  await prisma.sitterApplication.updateMany({
+    where: {
+      id: applicationId,
+      status: { in: ["APPLIED", "UNDER_REVIEW", "INTERVIEW"] },
+    },
+    data: {
+      status: "INTERVIEW",
+      interviewScheduledAt: interviewScheduledAt
+        ? new Date(interviewScheduledAt)
+        : null,
+      interviewNotes: interviewNotes || null,
+    },
+  });
+  revalidatePath("/admin/applications");
+  revalidatePath("/admin");
+}
+
+// Save/update the internal interview notes without changing the stage.
+export async function saveInterviewNotes(fd: FormData) {
+  await requireRole("ADMIN");
+  const applicationId = s(fd, "applicationId");
+  const interviewNotes = s(fd, "interviewNotes");
+  await prisma.sitterApplication.update({
+    where: { id: applicationId },
+    data: { interviewNotes: interviewNotes || null },
   });
   revalidatePath("/admin/applications");
 }
