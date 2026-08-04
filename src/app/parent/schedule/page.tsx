@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
+import { getParentBookingEligibility } from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
 import { isLastMinute } from "@/lib/pricing";
 import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
@@ -9,7 +11,10 @@ import { dt, moneyHr } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function SchedulePage() {
-  await requireRole("PARENT");
+  const user = await requireRole("PARENT");
+  const eligibility = await getParentBookingEligibility(user.id);
+  // Booking is gated on verification level; send unverified parents to verify.
+  if (!eligibility.canBook) redirect("/parent/verify");
   const settings = await getBusinessSettings();
 
   // Only listed sitters (and only their non-suspended accounts) with future
@@ -34,7 +39,7 @@ export default async function SchedulePage() {
     <div className="space-y-6">
       <PageTitle
         title="Available sitters"
-        subtitle="Every sitter here is vetted and listed by Sitbaby. Pick a time to book."
+        subtitle="Every sitter here is vetted and listed by Ri'aya. Pick a time to book."
       />
       {sitters.length === 0 ? (
         <EmptyState>No open availability right now — check back soon.</EmptyState>
@@ -61,7 +66,7 @@ export default async function SchedulePage() {
                     <Link
                       key={slot.id}
                       href={`/parent/book/${slot.id}`}
-                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-indigo-500 hover:bg-indigo-50"
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-brand-teal hover:bg-brand-cream"
                     >
                       {dt(slot.startTime)}
                       {rush && (

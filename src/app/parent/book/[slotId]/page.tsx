@@ -1,6 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
+import { getParentBookingEligibility } from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
 import { computePrice, isLastMinute } from "@/lib/pricing";
@@ -17,7 +18,9 @@ export default async function BookSlotPage({
 }: {
   params: { slotId: string };
 }) {
-  await requireRole("PARENT");
+  const user = await requireRole("PARENT");
+  const eligibility = await getParentBookingEligibility(user.id);
+  if (!eligibility.canBook) redirect("/parent/verify");
   const slot = await prisma.availabilitySlot.findUnique({
     where: { id: params.slotId },
     include: { sitterProfile: { include: { user: { select: { name: true } } } } },

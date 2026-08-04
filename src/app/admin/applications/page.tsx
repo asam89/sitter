@@ -15,8 +15,15 @@ export default async function ApplicationsPage() {
   });
 
   const pending = applications.filter(
-    (a) => a.status === "APPLIED" || a.status === "UNDER_REVIEW",
+    (a) =>
+      a.status === "APPLIED" ||
+      a.status === "UNDER_REVIEW" ||
+      a.status === "INTERVIEW",
   );
+
+  // datetime-local wants "yyyy-MM-ddThh:mm" in local-ish form.
+  const toLocalInput = (d: Date | null) =>
+    d ? d.toISOString().slice(0, 16) : "";
   const decided = applications.filter(
     (a) => a.status === "VETTED" || a.status === "REJECTED",
   );
@@ -55,7 +62,7 @@ export default async function ApplicationsPage() {
                     </p>
                   )}
                   {a.documentUrls.length > 0 && (
-                    <ul className="mt-1 text-sm text-indigo-600">
+                    <ul className="mt-1 text-sm text-brand-coral">
                       {a.documentUrls.map((u) => (
                         <li key={u}>
                           <a href={u} target="_blank" rel="noreferrer">
@@ -69,6 +76,15 @@ export default async function ApplicationsPage() {
                     Target rate: {moneyHr(a.targetPayRate)} · applied{" "}
                     {dt(a.createdAt)}
                   </p>
+                  {a.status === "INTERVIEW" && (
+                    <p className="mt-2 rounded-lg bg-brand-cream px-3 py-2 text-sm text-brand-teal">
+                      <span className="font-medium">Interview</span>
+                      {a.interviewScheduledAt
+                        ? ` scheduled for ${dt(a.interviewScheduledAt)}`
+                        : " — no time set yet"}
+                      {a.interviewNotes ? ` · ${a.interviewNotes}` : ""}
+                    </p>
+                  )}
                 </div>
                 <Badge color={APPLICATION_STATUS_COLOR[a.status]}>
                   {a.status.replace("_", " ")}
@@ -79,6 +95,8 @@ export default async function ApplicationsPage() {
                   applicationId={a.id}
                   status={a.status}
                   targetPayRate={a.targetPayRate}
+                  interviewScheduledAt={toLocalInput(a.interviewScheduledAt)}
+                  interviewNotes={a.interviewNotes}
                 />
               </div>
             </Card>

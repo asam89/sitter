@@ -40,7 +40,7 @@ export default async function AdminDashboard() {
     rushBookings,
   ] = await Promise.all([
     prisma.sitterApplication.count({
-      where: { status: { in: ["APPLIED", "UNDER_REVIEW"] } },
+      where: { status: { in: ["APPLIED", "UNDER_REVIEW", "INTERVIEW"] } },
     }),
     prisma.sitterProfile.findMany({
       include: {
@@ -71,11 +71,17 @@ export default async function AdminDashboard() {
       },
     }),
     prisma.booking.aggregate({
-      where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+      // Revenue is recognised once a booking is paid (escrow) — regardless of
+      // where it sits in the post-payment lifecycle.
+      where: { paidAt: { not: null }, status: { not: "CANCELLED" } },
       _sum: { totalAmount: true, platformFeeAmount: true, rushFeeAmount: true },
     }),
     prisma.booking.count({
-      where: { isLastMinute: true, status: { in: ["CONFIRMED", "COMPLETED"] } },
+      where: {
+        isLastMinute: true,
+        paidAt: { not: null },
+        status: { not: "CANCELLED" },
+      },
     }),
   ]);
 
@@ -87,10 +93,13 @@ export default async function AdminDashboard() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <PageTitle title="Admin dashboard" subtitle="Sitbaby operations." />
+        <PageTitle title="Admin dashboard" subtitle="Ri'aya operations." />
         <div className="flex gap-2">
           <ButtonLink href="/admin/applications" variant="secondary">
             Applications ({pendingApps})
+          </ButtonLink>
+          <ButtonLink href="/admin/parents" variant="secondary">
+            Parents
           </ButtonLink>
           <ButtonLink href="/admin/settings" variant="secondary">
             Business rules
@@ -138,7 +147,7 @@ export default async function AdminDashboard() {
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/admin/sitters/${sp.id}`}
-                      className="text-sm font-medium text-indigo-600"
+                      className="text-sm font-medium text-brand-coral"
                     >
                       Availability
                     </Link>
@@ -179,7 +188,7 @@ export default async function AdminDashboard() {
                     </p>
                     <Link
                       href={`/bookings/${r.booking.id}`}
-                      className="text-xs font-medium text-indigo-600"
+                      className="text-xs font-medium text-brand-coral"
                     >
                       View booking
                     </Link>
@@ -224,7 +233,7 @@ export default async function AdminDashboard() {
                     </Badge>
                     <Link
                       href={`/bookings/${b.id}`}
-                      className="text-sm font-medium text-indigo-600"
+                      className="text-sm font-medium text-brand-coral"
                     >
                       View
                     </Link>

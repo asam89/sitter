@@ -20,7 +20,7 @@ export default async function SitterApplyPage() {
     <div className="mx-auto max-w-2xl">
       <PageTitle
         title="Sitter vetting application"
-        subtitle="Tell us about yourself. Our team manually reviews every applicant — the pay rate you enter is a proposal; we set your listed rate when we vet you."
+        subtitle="Tell us about yourself. Our team manually reviews every applicant and holds a short interview before vetting — the pay rate you enter is a proposal; we set your listed rate when we vet you."
       />
       <Card>
         <form action={submitApplication} className="space-y-4">

@@ -1,13 +1,22 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { cancelBooking, completeBooking, payBooking } from "@/lib/actions";
+import {
+  approveBooking,
+  cancelBooking,
+  completeBooking,
+  declineBooking,
+  payBooking,
+  startBooking,
+} from "@/lib/actions";
+import { getBusinessSettings } from "@/lib/settings";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, Card, PageTitle } from "@/components/ui";
 import { BOOKING_STATUS_COLOR } from "@/lib/status";
 import { dt, money } from "@/lib/format";
 import { Chat } from "./Chat";
 import { ReportForm } from "./ReportForm";
+import { ReviewForm } from "./ReviewForm";
 
 export const dynamic = "force-dynamic";
 
@@ -20,19 +29,58 @@ export default async function BookingPage({
   const booking = await prisma.booking.findUnique({
     where: { id: params.id },
     include: {
-      parent: { select: { id: true, name: true } },
+      parent: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          parentProfile: {
+            select: {
+              streetAddress: true,
+              unit: true,
+              city: true,
+              province: true,
+              postalCode: true,
+            },
+          },
+        },
+      },
       sitter: { select: { id: true, name: true } },
       availabilitySlot: true,
+      reviews: true,
     },
   });
   if (!booking) notFound();
+
+  const settings = await getBusinessSettings();
 
   const isParent = booking.parentId === user.id;
   const isSitter = booking.sitterId === user.id;
   const isAdmin = user.role === "ADMIN";
   if (!isParent && !isSitter && !isAdmin) redirect("/");
 
-  const addressReleased = booking.status !== "CANCELLED";
+  const messagingOpen = !["CANCELLED", "DECLINED"].includes(booking.status);
+
+  // Service address (+ phone) is released to the sitter ONLY once the sitter has
+  // approved (addressReleasedAt is set then) — never while REQUESTED, never
+  // before, never in a URL. The parent always sees their own; Admin sees it for
+  // support.
+  const addr = booking.parent.parentProfile;
+  const addressUnlocked = booking.addressReleasedAt != null;
+  const showServiceAddress =
+    !!addr &&
+    (isParent || isAdmin || (isSitter && addressUnlocked));
+  const fullAddress = addr
+    ? [
+        addr.streetAddress,
+        addr.unit ? `Unit ${addr.unit}` : null,
+        addr.city,
+        addr.province,
+        addr.postalCode,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : "";
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -71,6 +119,25 @@ export default async function BookingPage({
         </dl>
       </Card>
 
+      {/* Service address — released to the sitter only once confirmed. */}
+      {showServiceAddress && fullAddress && (
+        <Card>
+          <h2 className="font-semibold">Service address</h2>
+          <p className="mt-2 text-sm text-slate-700">{fullAddress}</p>
+          {isSitter && (
+            <p className="mt-1 text-xs text-slate-500">
+              Shared with you because you approved this booking.
+            </p>
+          )}
+          {isParent && booking.status === "REQUESTED" && (
+            <p className="mt-1 text-xs text-slate-500">
+              Your sitter will see this address only after they approve the
+              booking.
+            </p>
+          )}
+        </Card>
+      )}
+
       {/* Pricing */}
       <Card>
         <h2 className="font-semibold">Pricing</h2>
@@ -103,19 +170,77 @@ export default async function BookingPage({
         </dl>
       </Card>
 
-      {/* Actions */}
-      <Card className="flex flex-wrap gap-3">
-        {isParent && booking.status === "REQUESTED" && (
+      {/* Actions — one card per lifecycle stage */}
+      <Card className="space-y-3">
+        {/* Sitter approves/declines a pending request */}
+        {isSitter && booking.status === "REQUESTED" && (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-600">
+              You&apos;d earn{" "}
+              <strong>{money(booking.baseAmount + booking.rushFeeAmount)}</strong>{" "}
+              at Ri&apos;aya&apos;s set rate. Approving releases the family&apos;s
+              full address to you.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <ActionButton action={approveBooking.bind(null, booking.id)}>
+                Approve at {money(booking.baseAmount + booking.rushFeeAmount)}
+              </ActionButton>
+              <ActionButton
+                action={declineBooking.bind(null, booking.id)}
+                variant="secondary"
+                confirm="Decline this booking? The slot will reopen."
+              >
+                Decline
+              </ActionButton>
+            </div>
+          </div>
+        )}
+
+        {/* Parent pays after the sitter approves */}
+        {isParent && booking.status === "APPROVED" && !booking.paidAt && (
           <ActionButton action={payBooking.bind(null, booking.id)}>
             Pay {money(booking.totalAmount)}
           </ActionButton>
         )}
-        {booking.status === "CONFIRMED" && (isParent || isAdmin) && (
-          <ActionButton action={completeBooking.bind(null, booking.id)}>
-            Mark completed
-          </ActionButton>
+        {isParent && booking.status === "REQUESTED" && (
+          <p className="text-sm text-slate-600">
+            Waiting for {booking.sitter.name} to approve. You&apos;ll pay once
+            they do.
+          </p>
         )}
-        {["REQUESTED", "CONFIRMED"].includes(booking.status) && (
+
+        {/* Start the job (approved + paid) */}
+        {booking.status === "APPROVED" &&
+          booking.paidAt &&
+          (isParent || isSitter || isAdmin) && (
+            <ActionButton action={startBooking.bind(null, booking.id)}>
+              Mark job started
+            </ActionButton>
+          )}
+        {booking.status === "APPROVED" && !booking.paidAt && isSitter && (
+          <p className="text-sm text-slate-600">
+            Approved — waiting for the parent to pay.
+          </p>
+        )}
+
+        {/* Completion — confirmer is configurable */}
+        {booking.status === "IN_PROGRESS" &&
+          (isAdmin ||
+            (settings.completionConfirmedBy === "PARENT" && isParent)) && (
+            <ActionButton action={completeBooking.bind(null, booking.id)}>
+              Confirm completed &amp; release payout
+            </ActionButton>
+          )}
+        {booking.status === "IN_PROGRESS" &&
+          settings.completionConfirmedBy === "ADMIN" &&
+          !isAdmin && (
+            <p className="text-sm text-slate-600">
+              In progress — Ri&apos;aya will confirm completion.
+            </p>
+          )}
+
+        {/* Cancel — available until the job completes */}
+        {["REQUESTED", "APPROVED", "IN_PROGRESS"].includes(booking.status) && (
           <ActionButton
             action={cancelBooking.bind(null, booking.id)}
             variant="secondary"
@@ -124,6 +249,21 @@ export default async function BookingPage({
             Cancel
           </ActionButton>
         )}
+
+        {booking.status === "DECLINED" && (
+          <p className="text-sm text-slate-600">
+            Declined by the sitter — the slot has reopened.
+          </p>
+        )}
+        {booking.status === "CANCELLED" && (
+          <p className="text-sm text-slate-600">
+            Cancelled.
+            {booking.cancellationChargeAmount > 0 &&
+              ` A late-cancellation charge of ${money(
+                booking.cancellationChargeAmount,
+              )} applied.`}
+          </p>
+        )}
         {booking.status === "COMPLETED" && (
           <p className="text-sm text-emerald-700">
             Completed — payout released to the sitter.
@@ -131,8 +271,31 @@ export default async function BookingPage({
         )}
       </Card>
 
+      {/* Reviews — unlock only after completion, two-way */}
+      {booking.status === "COMPLETED" && (isParent || isSitter) && (
+        <Card className="space-y-3">
+          <h2 className="font-semibold">Reviews</h2>
+          {booking.reviews.map((r) => (
+            <div key={r.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <p className="font-medium">
+                {"★".repeat(r.rating)}
+                {"☆".repeat(5 - r.rating)}
+                {r.authorId === user.id ? " · your review" : ""}
+              </p>
+              {r.comment && <p className="mt-1 text-slate-600">{r.comment}</p>}
+            </div>
+          ))}
+          {!booking.reviews.some((r) => r.authorId === user.id) && (
+            <ReviewForm
+              bookingId={booking.id}
+              subjectName={isParent ? booking.sitter.name : booking.parent.name}
+            />
+          )}
+        </Card>
+      )}
+
       {/* Messaging — always free, available once a booking exists. */}
-      {(isParent || isSitter) && addressReleased && (
+      {(isParent || isSitter) && messagingOpen && (
         <Card>
           <h2 className="mb-3 font-semibold">Messages</h2>
           <Chat bookingId={booking.id} meId={user.id} />

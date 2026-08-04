@@ -5,16 +5,16 @@ import { prisma } from "@/lib/prisma";
 export const PLACEHOLDER_TERMS_VERSION = "v0-draft";
 export const PLACEHOLDER_TERMS_BODY = `[PENDING LEGAL REVIEW]
 
-Sitbaby Parent Liability Waiver & Terms of Service (DRAFT)
+Ri'aya Parent Liability Waiver & Terms of Service (DRAFT)
 
-Sitbaby vets and lists babysitters as a scheduling and booking service. Sitters
-are independent contractors, not employees or agents of Sitbaby. Vetting and
-listing are not a guarantee of a sitter's conduct, and Sitbaby does not
+Ri'aya vets and lists babysitters as a scheduling and booking service. Sitters
+are independent contractors, not employees or agents of Ri'aya. Vetting and
+listing are not a guarantee of a sitter's conduct, and Ri'aya does not
 supervise care provided in your home.
 
 By confirming a booking you acknowledge that you engage the sitter at your own
 risk, that you are responsible for evaluating the suitability of any sitter for
-your family, and that Sitbaby's liability is limited to the fullest extent
+your family, and that Ri'aya's liability is limited to the fullest extent
 permitted by law.
 
 [This placeholder must be replaced with lawyer-drafted language before launch.]`;

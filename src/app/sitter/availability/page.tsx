@@ -11,6 +11,7 @@ import {
   buttonClass,
 } from "@/components/ui";
 import { dt } from "@/lib/format";
+import { EditSlot } from "./EditSlot";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export default async function AvailabilityPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <PageTitle
         title="Your availability"
-        subtitle="Add open time blocks. Parents can book these once Sitbaby has you listed."
+        subtitle="Add open time blocks. Parents can book these once Ri'aya has you listed."
       />
 
       <Card>
@@ -55,10 +56,19 @@ export default async function AvailabilityPage() {
               className={input}
             />
           </label>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" name="isLastMinuteEligible" />
+            Last-minute OK
+          </label>
           <button type="submit" className={buttonClass()}>
             Add slot
           </button>
         </form>
+        <p className="mt-2 text-xs text-slate-500">
+          Mark a slot &ldquo;last-minute OK&rdquo; to accept short-notice
+          bookings — those inside Ri&apos;aya&apos;s lead-time window add the
+          rush fee automatically.
+        </p>
       </Card>
 
       {profile.slots.length === 0 ? (
@@ -67,22 +77,35 @@ export default async function AvailabilityPage() {
         <div className="space-y-2">
           {profile.slots.map((slot) => (
             <Card key={slot.id}>
-              <div className="flex items-center justify-between">
-                <p className="text-sm">
-                  {dt(slot.startTime)} → {dt(slot.endTime)}
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm">
+                    {dt(slot.startTime)} → {dt(slot.endTime)}
+                  </p>
+                  {slot.isLastMinuteEligible && (
+                    <Badge color="amber">Last-minute OK</Badge>
+                  )}
+                </div>
                 <div className="flex items-center gap-3">
                   <Badge color={slot.status === "OPEN" ? "green" : "indigo"}>
                     {slot.status}
                   </Badge>
                   {slot.status === "OPEN" && (
-                    <ActionButton
-                      action={deleteMySlot.bind(null, slot.id)}
-                      variant="secondary"
-                      confirm="Remove this availability slot?"
-                    >
-                      Remove
-                    </ActionButton>
+                    <>
+                      <EditSlot
+                        slotId={slot.id}
+                        startTime={slot.startTime.toISOString()}
+                        endTime={slot.endTime.toISOString()}
+                        isLastMinuteEligible={slot.isLastMinuteEligible}
+                      />
+                      <ActionButton
+                        action={deleteMySlot.bind(null, slot.id)}
+                        variant="secondary"
+                        confirm="Remove this availability slot?"
+                      >
+                        Remove
+                      </ActionButton>
+                    </>
                   )}
                 </div>
               </div>

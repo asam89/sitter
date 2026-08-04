@@ -28,6 +28,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # (seed) are available at container start — convenient for a dev environment.
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
+# Static assets (illustrations, etc.) served from /public at the site root.
+COPY public ./public
 # tsconfig.json is needed so tsx can resolve the `@/` path aliases when seeding.
 COPY package.json package-lock.json next.config.mjs tsconfig.json ./
 COPY prisma ./prisma

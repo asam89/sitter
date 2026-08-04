@@ -23,29 +23,72 @@ async function main() {
     },
   });
 
-  // Sitbaby admin
+  // Ri'aya admin
   await prisma.user.upsert({
     where: { email: "admin@sitbaby.test" },
     update: { role: "ADMIN" },
     create: {
       email: "admin@sitbaby.test",
-      name: "Sitbaby Admin",
+      name: "Ri'aya Admin",
       passwordHash: pw,
       role: "ADMIN",
     },
   });
 
-  // Parent
+  // Parent — fully verified (Level 2) so booking demos work at any gate level.
   await prisma.user.upsert({
     where: { email: "parent@sitbaby.test" },
-    update: {},
+    update: {
+      emailVerified: new Date(),
+      phoneVerified: true,
+      verificationLevel: "LEVEL_2_IDENTITY",
+      parentProfile: {
+        update: {
+          streetAddress: "12 Maple St",
+          province: "ON",
+          postalCode: "L1S 1A1",
+          identityVerified: true,
+          verifiedName: "Aisha Parent",
+          idVerificationProvider: "manual",
+          idVerifiedAt: new Date(),
+        },
+      },
+    },
     create: {
       email: "parent@sitbaby.test",
       name: "Aisha Parent",
       passwordHash: pw,
       role: "PARENT",
       phone: "+1-905-555-0100",
-      parentProfile: { create: { city: "Ajax", address: "12 Maple St, Ajax ON" } },
+      emailVerified: new Date(),
+      phoneVerified: true,
+      verificationLevel: "LEVEL_2_IDENTITY",
+      parentProfile: {
+        create: {
+          city: "Ajax",
+          address: "12 Maple St, Ajax ON",
+          streetAddress: "12 Maple St",
+          province: "ON",
+          postalCode: "L1S 1A1",
+          identityVerified: true,
+          verifiedName: "Aisha Parent",
+          idVerificationProvider: "manual",
+          idVerifiedAt: new Date(),
+        },
+      },
+    },
+  });
+
+  // Parent — brand new, unverified (Level 0) to demo the KYC gate & flow.
+  await prisma.user.upsert({
+    where: { email: "parent.new@sitbaby.test" },
+    update: {},
+    create: {
+      email: "parent.new@sitbaby.test",
+      name: "Noor Newparent",
+      passwordHash: pw,
+      role: "PARENT",
+      parentProfile: { create: {} },
     },
   });
 
@@ -140,7 +183,7 @@ async function main() {
       role: "SITTER",
       application: {
         create: {
-          bio: "New to Sitbaby, lots of family childcare experience.",
+          bio: "New to Ri'aya, lots of family childcare experience.",
           experience: "Cared for younger siblings and cousins for years.",
           certifications: ["CPR"],
           documentUrls: ["https://example.com/sam-cpr.pdf"],
@@ -152,7 +195,7 @@ async function main() {
   });
 
   console.log(
-    "Seed complete. Login with any *@sitbaby.test / password123 (admin@, parent@, sitter.listed@, sitter.unlisted@, sitter.applicant@)",
+    "Seed complete. Login with any *@sitbaby.test / password123 (admin@, parent@ [verified], parent.new@ [unverified], sitter.listed@, sitter.unlisted@, sitter.applicant@)",
   );
 }
 
