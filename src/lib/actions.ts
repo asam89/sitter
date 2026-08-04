@@ -8,6 +8,7 @@ import { requireUser, requireRole } from "@/lib/session";
 import { getBusinessSettings, updateBusinessSettings } from "@/lib/settings";
 import { computePrice, isLastMinute } from "@/lib/pricing";
 import { getActiveTerms } from "@/lib/terms";
+import { meetsLevel, LEVEL_LABEL } from "@/lib/verification";
 import { stripeEnabled, stripe } from "@/lib/stripe";
 import {
   applicationSchema,
@@ -219,6 +220,7 @@ export async function updateSettings(fd: FormData) {
     rushFeeAmount: s(fd, "rushFeeAmount"),
     platformFeeType: s(fd, "platformFeeType"),
     platformFeeAmount: s(fd, "platformFeeAmount"),
+    minParentVerificationLevelToBook: s(fd, "minParentVerificationLevelToBook"),
   });
   if (!parsed.success) throw new Error("Invalid settings");
   await updateBusinessSettings(parsed.data);
@@ -249,6 +251,25 @@ export async function createBooking(
   fd: FormData,
 ): Promise<BookingFormState> {
   const user = await requireRole("PARENT");
+
+  // Verification gate: a parent must meet the Admin-configured minimum level
+  // before any booking can be created.
+  const settings0 = await getBusinessSettings();
+  const account = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: { verificationLevel: true },
+  });
+  if (
+    !meetsLevel(
+      account.verificationLevel,
+      settings0.minParentVerificationLevelToBook,
+    )
+  ) {
+    return {
+      error: `Please finish verifying your account (${LEVEL_LABEL[settings0.minParentVerificationLevelToBook]} required) before booking.`,
+    };
+  }
+
   const parsed = bookingSchema.safeParse({
     slotId: s(fd, "slotId"),
     childrenAgeRange: s(fd, "childrenAgeRange"),

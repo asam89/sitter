@@ -10,16 +10,20 @@ import {
 } from "@/components/ui";
 import { BOOKING_STATUS_COLOR } from "@/lib/status";
 import { dt, money } from "@/lib/format";
+import { getParentBookingEligibility, LEVEL_LABEL } from "@/lib/verification";
 
 export const dynamic = "force-dynamic";
 
 export default async function ParentDashboard() {
   const user = await requireRole("PARENT");
-  const bookings = await prisma.booking.findMany({
-    where: { parentId: user.id },
-    orderBy: { dateTime: "desc" },
-    include: { sitter: { select: { name: true } } },
-  });
+  const [bookings, eligibility] = await Promise.all([
+    prisma.booking.findMany({
+      where: { parentId: user.id },
+      orderBy: { dateTime: "desc" },
+      include: { sitter: { select: { name: true } } },
+    }),
+    getParentBookingEligibility(user.id),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -52,6 +56,23 @@ export default async function ParentDashboard() {
         </ul>
       </div>
 
+      {!eligibility.canBook && (
+        <div className="rounded-xl border border-brand-coral/40 bg-brand-coral/10 p-5">
+          <h2 className="font-semibold text-brand-ink">
+            Finish verifying to book
+          </h2>
+          <p className="mt-1 text-sm text-brand-teal">
+            Your account is at{" "}
+            <strong>{LEVEL_LABEL[eligibility.level]}</strong>. Reach{" "}
+            <strong>{LEVEL_LABEL[eligibility.required]}</strong> to start
+            booking vetted sitters.
+          </p>
+          <div className="mt-3">
+            <ButtonLink href="/parent/verify">Verify my account</ButtonLink>
+          </div>
+        </div>
+      )}
+
       <Card className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -67,7 +88,11 @@ export default async function ParentDashboard() {
             </p>
           </div>
         </div>
-        <ButtonLink href="/parent/schedule">View availability</ButtonLink>
+        <ButtonLink
+          href={eligibility.canBook ? "/parent/schedule" : "/parent/verify"}
+        >
+          {eligibility.canBook ? "View availability" : "Verify to book"}
+        </ButtonLink>
       </Card>
 
       <section>

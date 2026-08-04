@@ -89,6 +89,33 @@ export default async function AdminSettingsPage() {
             </div>
           </fieldset>
 
+          <fieldset className="rounded-lg border border-slate-200 p-3">
+            <legend className="px-1 text-sm font-semibold">
+              Parent verification gate
+            </legend>
+            <label className="block text-sm font-medium">
+              Minimum level required to book
+              <select
+                name="minParentVerificationLevelToBook"
+                defaultValue={s.minParentVerificationLevelToBook}
+                className={input}
+              >
+                <option value="LEVEL_0_REGISTERED">
+                  Level 0 — Registered (no verification)
+                </option>
+                <option value="LEVEL_1_CONTACT">
+                  Level 1 — Contact verified (email + phone)
+                </option>
+                <option value="LEVEL_2_IDENTITY">
+                  Level 2 — Identity verified (government ID + address)
+                </option>
+              </select>
+            </label>
+            <p className="mt-2 text-xs text-slate-500">
+              Parents below this level can browse but cannot create a booking.
+            </p>
+          </fieldset>
+
           <button type="submit" className={buttonClass()}>
             Save business rules
           </button>

@@ -20,7 +20,22 @@ export default async function BookingPage({
   const booking = await prisma.booking.findUnique({
     where: { id: params.id },
     include: {
-      parent: { select: { id: true, name: true } },
+      parent: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          parentProfile: {
+            select: {
+              streetAddress: true,
+              unit: true,
+              city: true,
+              province: true,
+              postalCode: true,
+            },
+          },
+        },
+      },
       sitter: { select: { id: true, name: true } },
       availabilitySlot: true,
     },
@@ -33,6 +48,27 @@ export default async function BookingPage({
   if (!isParent && !isSitter && !isAdmin) redirect("/");
 
   const addressReleased = booking.status !== "CANCELLED";
+
+  // Service address (+ phone) is released to the sitter ONLY once the booking
+  // is paid/confirmed — never while REQUESTED, never before, never in a URL.
+  // The parent always sees their own; an Admin can see it for support.
+  const addr = booking.parent.parentProfile;
+  const addressUnlocked =
+    booking.status === "CONFIRMED" || booking.status === "COMPLETED";
+  const showServiceAddress =
+    !!addr &&
+    (isParent || isAdmin || (isSitter && addressUnlocked));
+  const fullAddress = addr
+    ? [
+        addr.streetAddress,
+        addr.unit ? `Unit ${addr.unit}` : null,
+        addr.city,
+        addr.province,
+        addr.postalCode,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : "";
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -70,6 +106,25 @@ export default async function BookingPage({
           </dd>
         </dl>
       </Card>
+
+      {/* Service address — released to the sitter only once confirmed. */}
+      {showServiceAddress && fullAddress && (
+        <Card>
+          <h2 className="font-semibold">Service address</h2>
+          <p className="mt-2 text-sm text-slate-700">{fullAddress}</p>
+          {isSitter && (
+            <p className="mt-1 text-xs text-slate-500">
+              Shared with you because this booking is confirmed.
+            </p>
+          )}
+          {isParent && booking.status === "REQUESTED" && (
+            <p className="mt-1 text-xs text-slate-500">
+              Your sitter will see this address only after you pay and the
+              booking is confirmed.
+            </p>
+          )}
+        </Card>
+      )}
 
       {/* Pricing */}
       <Card>
