@@ -7,7 +7,9 @@ node_modules
 npm-debug.log*
 Dockerfile
 docker-compose.yml
+docker-compose.prod.yml
 .dockerignore
+deploy
 docs
 README.md
 tsconfig.tsbuildinfo

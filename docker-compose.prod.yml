@@ -1,0 +1,71 @@
+# Production-ish Compose for deploying Sitbaby on a single host (e.g. an OCI
+# Compute VM). Adds a Caddy TLS reverse proxy and does NOT publish the app or
+# database ports directly — only Caddy is internet-facing.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Configure via an .env file next to this compose file (see .env.prod.example).
+# At minimum set NEXTAUTH_SECRET, NEXTAUTH_URL, POSTGRES_PASSWORD, and
+# SITE_ADDRESS.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-sitbaby}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sitbaby}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sitbaby}?schema=public
+      DIRECT_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sitbaby}?schema=public
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set a strong NEXTAUTH_SECRET in .env}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?set NEXTAUTH_URL (e.g. https://sitbaby.example.com) in .env}
+      # Demo seeding is OFF by default in prod; set true only for a throwaway box.
+      SEED_ON_START: ${SEED_ON_START:-false}
+      LAST_MINUTE_THRESHOLD_HOURS: ${LAST_MINUTE_THRESHOLD_HOURS:-12}
+      RUSH_FEE_TYPE: ${RUSH_FEE_TYPE:-PERCENT}
+      RUSH_FEE_AMOUNT: ${RUSH_FEE_AMOUNT:-25}
+      PLATFORM_FEE_TYPE: ${PLATFORM_FEE_TYPE:-PERCENT}
+      PLATFORM_FEE_AMOUNT: ${PLATFORM_FEE_AMOUNT:-15}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS (a domain or :80) in .env}
+      TLS_EMAIL: ${TLS_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

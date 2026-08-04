@@ -1,0 +1,19 @@
+# Caddy reverse proxy for Sitbaby.
+#
+# SITE_ADDRESS controls how the app is served:
+#   - A domain (e.g. sitbaby.example.com) → Caddy obtains a Let's Encrypt cert
+#     automatically and serves HTTPS on 443 (with an HTTP→HTTPS redirect).
+#   - ":80" → plain HTTP only (useful before you have a domain / for a quick
+#     internal dev box).
+#
+# TLS_EMAIL is the ACME account email (recommended for expiry notices); it may
+# be left blank.
+
+{
+	email {$TLS_EMAIL}
+}
+
+{$SITE_ADDRESS} {
+	encode gzip
+	reverse_proxy app:3000
+}
