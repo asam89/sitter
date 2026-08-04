@@ -20,10 +20,10 @@ export default async function Home() {
   const session = await getSession();
   return (
     <div className="space-y-12">
-      <section className="relative overflow-hidden rounded-2xl bg-brand-teal px-8 py-16 text-white">
+      <section className="relative grid overflow-hidden rounded-2xl bg-brand-teal text-white md:grid-cols-2">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-30"
+          className="pointer-events-none absolute inset-0 opacity-25 md:w-1/2"
           style={{
             backgroundImage:
               "repeating-linear-gradient(90deg,#8598B5 0 28px,transparent 28px 64px)",
@@ -31,17 +31,17 @@ export default async function Home() {
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute right-8 top-8 h-16 w-16 bg-brand-coral"
+          className="pointer-events-none absolute left-6 top-6 h-14 w-14 bg-brand-coral md:left-auto md:right-1/2 md:mr-6"
           style={{
             clipPath:
               "polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)",
           }}
         />
-        <div className="relative">
-          <h1 className="max-w-2xl text-4xl font-bold leading-tight sm:text-5xl">
+        <div className="relative px-8 py-14">
+          <h1 className="max-w-md text-4xl font-bold leading-tight sm:text-5xl">
             Vetted babysitters, booked with peace of mind.
           </h1>
-          <p className="mt-4 max-w-xl text-lg text-brand-blue-light">
+          <p className="mt-4 max-w-md text-lg text-brand-blue-light">
             Ri&apos;aya Babysitters vets and lists every sitter. Log in, see
             who&apos;s available, and book directly — with a liability waiver and
             clear pricing on every booking.
@@ -77,6 +77,14 @@ export default async function Home() {
               </>
             )}
           </div>
+        </div>
+        <div className="relative flex items-end justify-center bg-brand-cream">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/illustrations/hero-babysitter.webp"
+            alt="A hijabi babysitter reading a book to young children while another plays with blocks"
+            className="h-full w-full object-cover"
+          />
         </div>
       </section>
 

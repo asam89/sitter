@@ -23,13 +23,13 @@ async function main() {
     },
   });
 
-  // Sitbaby admin
+  // Ri'aya admin
   await prisma.user.upsert({
     where: { email: "admin@sitbaby.test" },
     update: { role: "ADMIN" },
     create: {
       email: "admin@sitbaby.test",
-      name: "Sitbaby Admin",
+      name: "Ri'aya Admin",
       passwordHash: pw,
       role: "ADMIN",
     },
@@ -140,7 +140,7 @@ async function main() {
       role: "SITTER",
       application: {
         create: {
-          bio: "New to Sitbaby, lots of family childcare experience.",
+          bio: "New to Ri'aya, lots of family childcare experience.",
           experience: "Cared for younger siblings and cousins for years.",
           certifications: ["CPR"],
           documentUrls: ["https://example.com/sam-cpr.pdf"],

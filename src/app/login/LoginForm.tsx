@@ -87,6 +87,14 @@ export function LoginForm() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col items-center text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/illustrations/login-babysitter.webp"
+          alt="A hijabi babysitter holding a happy baby"
+          className="h-28 w-28 rounded-full object-cover ring-4 ring-brand-teal/10"
+        />
+      </div>
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-brand-ink">
           Welcome back

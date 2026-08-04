@@ -52,12 +52,20 @@ export default async function ParentDashboard() {
         </ul>
       </div>
 
-      <Card className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-semibold">Find & book a sitter</h2>
-          <p className="text-sm text-slate-600">
-            See real availability from our currently-listed, vetted sitters.
-          </p>
+      <Card className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/illustrations/spot-outdoors.webp"
+            alt="A hijabi babysitter walking with two children"
+            className="hidden h-20 w-20 rounded-lg object-cover sm:block"
+          />
+          <div>
+            <h2 className="font-semibold text-brand-ink">Find & book a sitter</h2>
+            <p className="text-sm text-brand-teal-light">
+              See real availability from our currently-listed, vetted sitters.
+            </p>
+          </div>
         </div>
         <ButtonLink href="/parent/schedule">View availability</ButtonLink>
       </Card>
