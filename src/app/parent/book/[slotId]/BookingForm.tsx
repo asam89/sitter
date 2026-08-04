@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useFormState } from "react-dom";
 import { Card, buttonClass } from "@/components/ui";
+import type { BookingFormState } from "@/lib/actions";
 
 export function BookingForm({
   slotId,
@@ -10,17 +12,21 @@ export function BookingForm({
   termsBody,
 }: {
   slotId: string;
-  action: (fd: FormData) => Promise<void>;
+  action: (
+    state: BookingFormState,
+    fd: FormData,
+  ) => Promise<BookingFormState>;
   termsVersion: string;
   termsBody: string;
 }) {
   const [accepted, setAccepted] = useState(false);
+  const [state, formAction] = useFormState(action, {});
   const input =
     "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
 
   return (
     <Card>
-      <form action={action} className="space-y-4">
+      <form action={formAction} className="space-y-4">
         <input type="hidden" name="slotId" value={slotId} />
 
         <div className="grid grid-cols-2 gap-3">
@@ -77,6 +83,15 @@ export function BookingForm({
             (version {termsVersion}).
           </span>
         </label>
+
+        {state?.error && (
+          <p
+            role="alert"
+            className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+          >
+            {state.error}
+          </p>
+        )}
 
         <button
           type="submit"

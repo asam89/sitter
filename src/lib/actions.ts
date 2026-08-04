@@ -242,7 +242,12 @@ export async function updateReportStatus(
 
 // ---------- Parent: booking ----------
 
-export async function createBooking(fd: FormData) {
+export type BookingFormState = { error?: string };
+
+export async function createBooking(
+  _prevState: BookingFormState,
+  fd: FormData,
+): Promise<BookingFormState> {
   const user = await requireRole("PARENT");
   const parsed = bookingSchema.safeParse({
     slotId: s(fd, "slotId"),
@@ -252,9 +257,9 @@ export async function createBooking(fd: FormData) {
     waiverAccepted: s(fd, "waiverAccepted"),
   });
   if (!parsed.success) {
-    throw new Error(
-      parsed.error.issues[0]?.message ?? "Invalid booking input",
-    );
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid booking input",
+    };
   }
   const d = parsed.data;
 
@@ -263,10 +268,10 @@ export async function createBooking(fd: FormData) {
     include: { sitterProfile: true },
   });
   if (!slot || slot.status !== "OPEN") {
-    throw new Error("That time slot is no longer available.");
+    return { error: "That time slot is no longer available." };
   }
   if (!slot.sitterProfile.isListed) {
-    throw new Error("That sitter is not currently bookable.");
+    return { error: "That sitter is not currently bookable." };
   }
 
   const settings = await getBusinessSettings();
@@ -289,7 +294,7 @@ export async function createBooking(fd: FormData) {
     data: { status: "BOOKED" },
   });
   if (claimed.count === 0) {
-    throw new Error("That time slot was just booked.");
+    return { error: "That time slot was just booked." };
   }
 
   const booking = await prisma.booking.create({
