@@ -18,7 +18,12 @@ export async function Navbar() {
           href="/"
           className="flex items-center gap-2 text-lg font-bold text-brand-ink"
         >
-          <span className="inline-block h-6 w-6 rounded-full bg-brand-coral" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/riaya-logo.png"
+            alt="Ri'aya Babysitters Inc. logo"
+            className="h-9 w-9 rounded-full object-contain"
+          />
           Ri&apos;aya Babysitters
         </Link>
         <nav className="flex items-center gap-4 text-sm">

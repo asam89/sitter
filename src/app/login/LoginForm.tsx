@@ -90,9 +90,9 @@ export function LoginForm() {
       <div className="flex flex-col items-center text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/illustrations/login-babysitter.webp"
-          alt="A hijabi babysitter holding a happy baby"
-          className="h-28 w-28 rounded-full object-cover ring-4 ring-brand-teal/10"
+          src="/brand/riaya-logo.png"
+          alt="Ri'aya Babysitters Inc. logo"
+          className="h-28 w-28 object-contain"
         />
       </div>
       <div>
