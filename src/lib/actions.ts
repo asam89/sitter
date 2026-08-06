@@ -11,6 +11,10 @@ import { getActiveTerms } from "@/lib/terms";
 import { meetsLevel, LEVEL_LABEL } from "@/lib/verification";
 import { stripeEnabled, stripe } from "@/lib/stripe";
 import { notifyBookingEvent, type BookingEvent } from "@/lib/booking-notifications";
+import {
+  notifySitterVetted,
+  notifySitterListed,
+} from "@/lib/sitter-account-notifications";
 import type { BusinessSettings } from "@prisma/client";
 import {
   applicationSchema,
@@ -285,6 +289,7 @@ export async function vetApplication(fd: FormData) {
 
   const app = await prisma.sitterApplication.findUniqueOrThrow({
     where: { id: applicationId },
+    include: { user: { select: { name: true, email: true } } },
   });
   if (app.status === "VETTED") return;
 
@@ -311,6 +316,10 @@ export async function vetApplication(fd: FormData) {
       update: { listedPayRate },
     }),
   ]);
+
+  // Let the sitter know they've been approved (best-effort; never blocks vetting).
+  await notifySitterVetted(app.user.email, app.user.name);
+
   revalidatePath("/admin/applications");
   revalidatePath("/admin");
 }
@@ -333,10 +342,17 @@ export async function rejectApplication(fd: FormData) {
 
 export async function setListed(sitterProfileId: string, isListed: boolean) {
   await requireRole("ADMIN");
-  await prisma.sitterProfile.update({
+  const profile = await prisma.sitterProfile.update({
     where: { id: sitterProfileId },
     data: { isListed },
+    include: { user: { select: { name: true, email: true } } },
   });
+
+  // Notify the sitter the first time they go live (best-effort).
+  if (isListed) {
+    await notifySitterListed(profile.user.email, profile.user.name);
+  }
+
   revalidatePath("/admin");
   revalidatePath("/admin/sitters");
 }
