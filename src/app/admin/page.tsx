@@ -13,6 +13,7 @@ import { dt, money, moneyHr } from "@/lib/format";
 import {
   ListingToggle,
   ReportControls,
+  ShowcaseToggle,
   SuspendButton,
 } from "./AdminControls";
 
@@ -154,6 +155,11 @@ export default async function AdminDashboard() {
                     <ListingToggle
                       sitterProfileId={sp.id}
                       isListed={sp.isListed}
+                    />
+                    <ShowcaseToggle
+                      sitterProfileId={sp.id}
+                      showcased={sp.showcased}
+                      optedIn={sp.publicOptIn}
                     />
                     <SuspendButton
                       userId={sp.user.id}

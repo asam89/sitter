@@ -40,3 +40,4 @@ next-env.d.ts
 
 # private KYC document storage (never commit sensitive ID scans)
 /.private/
+/.uploads/
