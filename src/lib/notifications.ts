@@ -73,6 +73,9 @@ class ResendEmailProvider implements EmailProvider {
   constructor(
     private readonly apiKey: string,
     private readonly from: string,
+    // Optional Reply-To (e.g. hello@riaya.ca) so replies reach Ri'aya even while
+    // the verified sending domain differs from the from-address.
+    private readonly replyTo?: string,
   ) {}
 
   private async send(to: string, subject: string, text: string) {
@@ -82,7 +85,13 @@ class ResendEmailProvider implements EmailProvider {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from: this.from, to, subject, text }),
+      body: JSON.stringify({
+        from: this.from,
+        to,
+        subject,
+        text,
+        ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+      }),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -111,6 +120,7 @@ export function getEmailProvider(): EmailProvider {
       return new ResendEmailProvider(
         process.env.RESEND_API_KEY ?? "",
         process.env.EMAIL_FROM ?? "Ri'aya Babysitters <onboarding@resend.dev>",
+        process.env.EMAIL_REPLY_TO || undefined,
       );
     default:
       return new StubEmailProvider();
