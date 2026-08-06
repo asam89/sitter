@@ -27,6 +27,12 @@ export async function Navbar() {
           Ri&apos;aya Babysitters
         </Link>
         <nav className="flex items-center gap-4 text-sm">
+          <Link
+            href="/team"
+            className="hidden font-medium text-brand-teal hover:text-brand-coral sm:inline"
+          >
+            Our team
+          </Link>
           {session?.user ? (
             <>
               <Link
