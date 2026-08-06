@@ -158,7 +158,15 @@ export function LoginForm() {
             {loading ? "Logging in…" : `Log in as ${active.label}`}
           </button>
         </form>
-        <p className="mt-4 text-sm text-brand-teal-light">
+        <p className="mt-3 text-sm text-brand-teal-light">
+          <Link
+            href="/forgot-password"
+            className="font-medium text-brand-coral"
+          >
+            Forgot your password?
+          </Link>
+        </p>
+        <p className="mt-2 text-sm text-brand-teal-light">
           New here?{" "}
           <Link
             href={`/signup?role=${role}`}

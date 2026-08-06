@@ -64,11 +64,54 @@ class StubWhatsappProvider implements WhatsappProvider {
   }
 }
 
-// Provider selection. Only the stub is wired today; real providers plug in here
-// once the business confirms a vendor and supplies keys (see docs/booking-lifecycle-notes.md).
+// Real email delivery via Resend (https://resend.com) over its REST API — no
+// SDK dependency. Enable with EMAIL_PROVIDER=resend, RESEND_API_KEY=..., and
+// EMAIL_FROM="Ri'aya <no-reply@yourdomain>".
+class ResendEmailProvider implements EmailProvider {
+  readonly name = "resend";
+  readonly stub = false;
+  constructor(
+    private readonly apiKey: string,
+    private readonly from: string,
+  ) {}
+
+  private async send(to: string, subject: string, text: string) {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ from: this.from, to, subject, text }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Resend send failed (${res.status}): ${detail}`);
+    }
+  }
+
+  async sendVerificationCode(to: string, code: string) {
+    await this.send(
+      to,
+      "Your Ri'aya verification code",
+      `Your Ri'aya verification code is ${code}. It expires shortly.`,
+    );
+  }
+
+  async sendMessage(to: string, msg: NotificationMessage) {
+    await this.send(to, msg.subject, msg.body);
+  }
+}
+
+// Provider selection. The stub logs to the server console; set EMAIL_PROVIDER to
+// switch to a real vendor (see docs/booking-lifecycle-notes.md).
 export function getEmailProvider(): EmailProvider {
   switch (process.env.EMAIL_PROVIDER) {
-    // case "resend": return new ResendEmailProvider(process.env.RESEND_API_KEY!);
+    case "resend":
+      return new ResendEmailProvider(
+        process.env.RESEND_API_KEY ?? "",
+        process.env.EMAIL_FROM ?? "Ri'aya Babysitters <onboarding@resend.dev>",
+      );
     default:
       return new StubEmailProvider();
   }
