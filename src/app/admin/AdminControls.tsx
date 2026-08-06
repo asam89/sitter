@@ -10,6 +10,7 @@ import {
   updateReportStatus,
   vetApplication,
 } from "@/lib/actions";
+import { setSitterShowcased } from "@/lib/sitter-profile-actions";
 import { ActionButton } from "@/components/ActionButton";
 import { buttonClass } from "@/components/ui";
 
@@ -30,6 +31,32 @@ export function ListingToggle({
       variant={isListed ? "secondary" : "primary"}
     >
       {isListed ? "Un-list" : "List"}
+    </ActionButton>
+  );
+}
+
+// Admin approval to feature a sitter on the public "Meet our team" page. Only
+// meaningful once the sitter has opted in; the button hints when they haven't.
+export function ShowcaseToggle({
+  sitterProfileId,
+  showcased,
+  optedIn,
+}: {
+  sitterProfileId: string;
+  showcased: boolean;
+  optedIn: boolean;
+}) {
+  if (!optedIn && !showcased) {
+    return (
+      <span className="text-xs text-slate-400">Not opted in</span>
+    );
+  }
+  return (
+    <ActionButton
+      action={setSitterShowcased.bind(null, sitterProfileId, !showcased)}
+      variant={showcased ? "secondary" : "primary"}
+    >
+      {showcased ? "Remove from team page" : "Feature on team page"}
     </ActionButton>
   );
 }

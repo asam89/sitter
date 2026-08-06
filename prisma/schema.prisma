@@ -247,6 +247,14 @@ model SitterProfile {
   city            String?
   listedPayRate   Int // Admin-set hourly rate (whole CAD) — distinct from targetPayRate
   isListed        Boolean  @default(false)
+  // Public profile photo (opaque filename in public storage; not a public URL).
+  // Served through /api/sitter/[id]/photo. Null = show initials avatar instead.
+  photoPath       String?
+  // Sitter consent to appear publicly on the "Meet our team" page. Default off.
+  publicOptIn     Boolean  @default(false)
+  // Admin approval to feature this sitter publicly. Both publicOptIn AND
+  // showcased must be true (and isListed) before a sitter appears publicly.
+  showcased       Boolean  @default(false)
   serviceRadiusKm Int      @default(15)
   vettedAt        DateTime @default(now())
   stripeAccountId String? // Stripe Connect Express connected account (test mode)

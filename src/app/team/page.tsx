@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { prisma } from "@/lib/prisma";
 import { TEAM_GROUPS, initials, type TeamMember } from "@/lib/team";
 
 export const metadata: Metadata = {
@@ -6,6 +7,8 @@ export const metadata: Metadata = {
   description:
     "The Early Childhood Educators, OCT-certified teachers, and trusted community members who evaluate and approve every Ri'aya babysitter.",
 };
+
+export const dynamic = "force-dynamic";
 
 const AVATAR_COLORS = [
   "bg-brand-teal",
@@ -40,7 +43,53 @@ function MemberCard({ member, index }: { member: TeamMember; index: number }) {
   );
 }
 
-export default function TeamPage() {
+// A publicly showcased sitter: opted in, admin-approved, and currently listed.
+function SitterCard({
+  id,
+  name,
+  bio,
+  hasPhoto,
+  index,
+}: {
+  id: string;
+  name: string;
+  bio: string | null;
+  hasPhoto: boolean;
+  index: number;
+}) {
+  return (
+    <div className="flex gap-4 rounded-xl border border-brand-teal/10 bg-white p-5 shadow-sm">
+      {hasPhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/sitter/${id}/photo`}
+          alt={`${name}, Ri'aya babysitter`}
+          className="h-14 w-14 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <Avatar name={name} index={index} />
+      )}
+      <div>
+        <p className="font-semibold text-brand-ink">{name}</p>
+        <p className="text-sm text-brand-teal-light">Babysitter</p>
+        {bio && <p className="mt-2 text-sm text-slate-600">{bio}</p>}
+      </div>
+    </div>
+  );
+}
+
+export default async function TeamPage() {
+  const sitters = await prisma.sitterProfile.findMany({
+    where: { isListed: true, publicOptIn: true, showcased: true },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      bio: true,
+      photoPath: true,
+      user: { select: { name: true } },
+    },
+  });
+
   return (
     <div className="space-y-10">
       <header className="rounded-2xl bg-brand-teal px-8 py-12 text-white">
@@ -70,6 +119,32 @@ export default function TeamPage() {
           </div>
         </section>
       ))}
+
+      {sitters.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-brand-ink">
+              Our babysitters
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm text-brand-teal-light">
+              Vetted, listed sitters who chose to share a little about
+              themselves.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {sitters.map((s, i) => (
+              <SitterCard
+                key={s.id}
+                id={s.id}
+                name={s.user.name}
+                bio={s.bio}
+                hasPhoto={Boolean(s.photoPath)}
+                index={i}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

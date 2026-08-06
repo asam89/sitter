@@ -11,6 +11,7 @@ import {
   PageTitle,
 } from "@/components/ui";
 import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
+import { PublicProfileCard } from "./PublicProfileCard";
 import { dt, money, moneyHr } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -126,6 +127,17 @@ export default async function SitterDashboard() {
             )}
           </div>
         </Card>
+      )}
+
+      {/* Public profile: photo + bio + opt-in (only once vetted) */}
+      {profile && (
+        <PublicProfileCard
+          profileId={profile.id}
+          bio={profile.bio ?? ""}
+          publicOptIn={profile.publicOptIn}
+          hasPhoto={Boolean(profile.photoPath)}
+          showcased={profile.showcased}
+        />
       )}
 
       {/* Bookings — grouped by lifecycle stage */}
