@@ -33,12 +33,19 @@ function Avatar({ name, index }: { name: string; index: number }) {
 
 function MemberCard({ member, index }: { member: TeamMember; index: number }) {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-brand-teal/10 bg-white p-5 shadow-sm">
-      <Avatar name={member.name} index={index} />
-      <div>
-        <p className="font-semibold text-brand-ink">{member.name}</p>
-        <p className="text-sm text-brand-teal-light">{member.title}</p>
+    <div className="rounded-xl border border-brand-teal/10 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-4">
+        <Avatar name={member.name} index={index} />
+        <div>
+          <p className="font-semibold text-brand-ink">{member.name}</p>
+          <p className="text-sm text-brand-teal-light">{member.title}</p>
+        </div>
       </div>
+      {member.bio && (
+        <p className="mt-3 whitespace-pre-line text-sm text-slate-600">
+          {member.bio}
+        </p>
+      )}
     </div>
   );
 }
