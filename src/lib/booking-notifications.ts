@@ -22,6 +22,13 @@ import { dt, money } from "@/lib/format";
 
 type Channel = "EMAIL" | "SMS" | "WHATSAPP";
 
+// Notifications are read outside the app (inbox, texts), so booking links have
+// to be absolute.
+function appUrl(path: string): string {
+  const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(/\/$/, "");
+  return `${base}${path}`;
+}
+
 export type BookingEvent =
   | "REQUESTED"
   | "APPROVED"
@@ -53,7 +60,7 @@ function buildMessage(
 ): NotificationMessage {
   const where = ctx.city ? ` in ${ctx.city}` : "";
   const when = dt(ctx.when);
-  const link = `/bookings/${ctx.bookingId}`;
+  const link = appUrl(`/bookings/${ctx.bookingId}`);
   switch (event) {
     case "REQUESTED":
       return {

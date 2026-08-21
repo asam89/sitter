@@ -112,6 +112,90 @@ class ResendEmailProvider implements EmailProvider {
   }
 }
 
+// Real SMS / WhatsApp delivery via Twilio's REST API (no SDK dependency).
+//
+// SMS: SMS_PROVIDER=twilio + TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN and either
+// TWILIO_SMS_FROM (an E.164 number you own) or TWILIO_MESSAGING_SERVICE_SID.
+// WhatsApp: WHATSAPP_PROVIDER=twilio + TWILIO_WHATSAPP_FROM ("whatsapp:+1...").
+//
+// Twilio requires the destination to be E.164 (+15551234567); phone numbers are
+// user-entered so we normalise the common Canadian/US 10-digit form here rather
+// than failing the send.
+function toE164(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("+")) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return `+${digits}`;
+}
+
+class TwilioMessagingProvider {
+  readonly stub = false;
+  constructor(
+    private readonly accountSid: string,
+    private readonly authToken: string,
+    // Either a from-number or a messaging service; Twilio needs exactly one.
+    private readonly from: string | undefined,
+    private readonly messagingServiceSid: string | undefined,
+    // WhatsApp addresses are prefixed ("whatsapp:+1...") on both ends.
+    private readonly prefix: "" | "whatsapp:" = "",
+  ) {}
+
+  protected async sendText(to: string, body: string) {
+    const params = new URLSearchParams({
+      To: `${this.prefix}${toE164(to)}`,
+      Body: body,
+    });
+    if (this.messagingServiceSid) {
+      params.set("MessagingServiceSid", this.messagingServiceSid);
+    } else if (this.from) {
+      params.set("From", `${this.prefix}${toE164(this.from)}`);
+    } else {
+      throw new Error(
+        "Twilio needs TWILIO_SMS_FROM or TWILIO_MESSAGING_SERVICE_SID",
+      );
+    }
+    const res = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(
+            `${this.accountSid}:${this.authToken}`,
+          ).toString("base64")}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params,
+      },
+    );
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Twilio send failed (${res.status}): ${detail}`);
+    }
+  }
+}
+
+class TwilioSmsProvider extends TwilioMessagingProvider implements SmsProvider {
+  readonly name = "twilio";
+  async sendVerificationCode(to: string, code: string) {
+    await this.sendText(to, `Your Ri'aya verification code is ${code}.`);
+  }
+  async sendMessage(to: string, msg: NotificationMessage) {
+    await this.sendText(to, msg.body);
+  }
+}
+
+class TwilioWhatsappProvider
+  extends TwilioMessagingProvider
+  implements WhatsappProvider
+{
+  readonly name = "twilio";
+  async sendMessage(to: string, msg: NotificationMessage) {
+    await this.sendText(to, msg.body);
+  }
+}
+
 // Provider selection. The stub logs to the server console; set EMAIL_PROVIDER to
 // switch to a real vendor (see docs/booking-lifecycle-notes.md).
 export function getEmailProvider(): EmailProvider {
@@ -129,7 +213,13 @@ export function getEmailProvider(): EmailProvider {
 
 export function getSmsProvider(): SmsProvider {
   switch (process.env.SMS_PROVIDER) {
-    // case "twilio": return new TwilioSmsProvider(...);
+    case "twilio":
+      return new TwilioSmsProvider(
+        process.env.TWILIO_ACCOUNT_SID ?? "",
+        process.env.TWILIO_AUTH_TOKEN ?? "",
+        process.env.TWILIO_SMS_FROM || undefined,
+        process.env.TWILIO_MESSAGING_SERVICE_SID || undefined,
+      );
     default:
       return new StubSmsProvider();
   }
@@ -137,7 +227,14 @@ export function getSmsProvider(): SmsProvider {
 
 export function getWhatsappProvider(): WhatsappProvider {
   switch (process.env.WHATSAPP_PROVIDER) {
-    // case "twilio": return new TwilioWhatsappProvider(...);
+    case "twilio":
+      return new TwilioWhatsappProvider(
+        process.env.TWILIO_ACCOUNT_SID ?? "",
+        process.env.TWILIO_AUTH_TOKEN ?? "",
+        process.env.TWILIO_WHATSAPP_FROM || undefined,
+        undefined,
+        "whatsapp:",
+      );
     default:
       return new StubWhatsappProvider();
   }
