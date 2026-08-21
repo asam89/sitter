@@ -198,7 +198,7 @@ export function AvailabilityWeek({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-brand-teal/10 bg-white">
+      <div className="select-none overflow-x-auto rounded-xl border border-brand-teal/10 bg-white">
         <div className="min-w-[48rem]">
           {/* Day headers */}
           <div
