@@ -89,9 +89,14 @@ export default async function BookingPage({
           title={`Booking ${bookingRef(booking.bookingNumber)}`}
           subtitle={dt(booking.dateTime)}
         />
-        <Badge color={BOOKING_STATUS_COLOR[booking.status]}>
-          {booking.status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge color={BOOKING_STATUS_COLOR[booking.status]}>
+            {booking.status}
+          </Badge>
+          {booking.paidAt && booking.status !== "CANCELLED" && (
+            <Badge color="green">PAID</Badge>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -170,6 +175,12 @@ export default async function BookingPage({
                 : money(booking.totalAmount)}
             </span>
           </div>
+          {booking.paidAt && (
+            <div className="flex justify-between text-emerald-700">
+              <span>Paid {dt(booking.paidAt)}</span>
+              <span>{isSitter ? "Payout on completion" : "Receipt on file"}</span>
+            </div>
+          )}
         </dl>
       </Card>
 
@@ -216,9 +227,15 @@ export default async function BookingPage({
         {booking.status === "APPROVED" &&
           booking.paidAt &&
           (isParent || isSitter || isAdmin) && (
-            <ActionButton action={startBooking.bind(null, booking.id)}>
-              Mark job started
-            </ActionButton>
+            <div className="space-y-2">
+              <p className="text-sm text-emerald-700">
+                Paid and confirmed — {booking.sitter.name} is booked for{" "}
+                {dt(booking.dateTime)}.
+              </p>
+              <ActionButton action={startBooking.bind(null, booking.id)}>
+                Mark job started
+              </ActionButton>
+            </div>
           )}
         {booking.status === "APPROVED" && !booking.paidAt && isSitter && (
           <p className="text-sm text-slate-600">
