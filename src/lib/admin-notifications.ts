@@ -1,4 +1,4 @@
-// Admin-facing email alerts.
+// Admin-facing alerts (email, plus optional SMS).
 //
 // The Admin dashboard is the source of truth, but Admins also want a push when
 // something needs their attention: a new account, a submitted sitter
@@ -11,11 +11,14 @@
 // that with an explicit comma-separated list. Each alert can be switched off
 // individually (ADMIN_ALERT_SIGNUP / _APPLICATION / _BOOKING = false).
 //
+// Text alerts go to ADMIN_ALERT_PHONES and need a real SMS provider
+// (SMS_PROVIDER=twilio); unset, the stub logs them server-side.
+//
 // Never throws: an alert failure must never roll back the user action that
 // triggered it.
 
 import { prisma } from "@/lib/prisma";
-import { getEmailProvider } from "@/lib/notifications";
+import { getEmailProvider, getSmsProvider } from "@/lib/notifications";
 import { bookingRef, dt, money } from "@/lib/format";
 
 type AdminAlert = "SIGNUP" | "APPLICATION" | "BOOKING";
@@ -29,6 +32,15 @@ function isEnabled(alert: AdminAlert): boolean {
   const raw = process.env[`ADMIN_ALERT_${alert}`];
   if (raw === undefined || raw === "") return true;
   return raw !== "false" && raw !== "0";
+}
+
+// Admin phone numbers for text alerts. Admin accounts don't reliably carry a
+// phone, so texting is opt-in through an explicit list.
+function adminPhones(): string[] {
+  return (process.env.ADMIN_ALERT_PHONES ?? "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
 }
 
 async function adminRecipients(): Promise<string[]> {
@@ -54,7 +66,6 @@ async function alertAdmins(
   if (!isEnabled(alert)) return;
   try {
     const to = await adminRecipients();
-    if (to.length === 0) return;
     const email = getEmailProvider();
     for (const address of to) {
       await email.sendMessage(address, {
@@ -64,7 +75,21 @@ async function alertAdmins(
     }
   } catch (e) {
     console.error(
-      `[admin-notify] ${alert} alert failed: ${String(e).slice(0, 200)}`,
+      `[admin-notify] ${alert} email alert failed: ${String(e).slice(0, 200)}`,
+    );
+  }
+  // Texts run independently of email so one channel failing can't mute the
+  // other. The subject already says who/what, so that's the whole text.
+  try {
+    const phones = adminPhones();
+    if (phones.length === 0) return;
+    const sms = getSmsProvider();
+    for (const phone of phones) {
+      await sms.sendMessage(phone, { subject, body: `Ri'aya: ${subject}` });
+    }
+  } catch (e) {
+    console.error(
+      `[admin-notify] ${alert} SMS alert failed: ${String(e).slice(0, 200)}`,
     );
   }
 }
