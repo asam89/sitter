@@ -9,6 +9,8 @@ export const registerSchema = z
     role: z.enum(["PARENT", "SITTER"]),
     phone: z.string().max(40).optional().or(z.literal("")),
     city: z.string().max(120).optional().or(z.literal("")),
+    // Express, opt-in newsletter consent (CASL). Absent/false means no consent.
+    newsletterOptIn: z.boolean().optional().default(false),
   })
   .strict();
 

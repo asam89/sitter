@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, buttonClass } from "@/components/ui";
+import { NEWSLETTER_CONSENT_TEXT } from "@/lib/consent";
 
 export function SignupForm() {
   const router = useRouter();
@@ -18,6 +19,9 @@ export function SignupForm() {
     phone: "",
     city: "",
   });
+  // Unchecked by default: CASL requires express opt-in, so a pre-ticked box
+  // would not be valid consent.
+  const [newsletterOptIn, setNewsletterOptIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,7 +32,7 @@ export function SignupForm() {
     const res = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, role }),
+      body: JSON.stringify({ ...form, role, newsletterOptIn }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -127,6 +131,19 @@ export function SignupForm() {
             />
           </label>
         </div>
+
+        <label className="flex items-start gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={newsletterOptIn}
+            onChange={(e) => setNewsletterOptIn(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>{NEWSLETTER_CONSENT_TEXT}</span>
+        </label>
+        <p className="text-xs text-slate-500">
+          We&apos;ll always email you about your own account and bookings.
+        </p>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button type="submit" disabled={loading} className={buttonClass()}>

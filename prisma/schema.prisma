@@ -119,6 +119,16 @@ model User {
   phoneVerified     Boolean           @default(false)
   verificationLevel VerificationLevel @default(LEVEL_0_REGISTERED)
 
+  // --- Newsletter / marketing consent (CASL) ---
+  // Consent must be express and provable: we keep when it was given and the
+  // exact wording shown at the time, plus an unsubscribe token so every
+  // marketing send can carry a working one-click opt-out.
+  newsletterOptIn       Boolean   @default(false)
+  newsletterConsentAt   DateTime?
+  newsletterConsentText String?
+  newsletterOptOutAt    DateTime?
+  unsubscribeToken      String?   @unique
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
