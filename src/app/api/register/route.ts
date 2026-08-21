@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validation";
+import { notifyAdminsOfSignup } from "@/lib/admin-notifications";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
@@ -38,6 +39,14 @@ export async function POST(req: Request) {
       parentProfile:
         role === "PARENT" ? { create: { city: city || null } } : undefined,
     },
+  });
+
+  await notifyAdminsOfSignup({
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    phone: user.phone,
+    city: city || null,
   });
 
   return NextResponse.json({ id: user.id }, { status: 201 });

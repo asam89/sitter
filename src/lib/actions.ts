@@ -15,6 +15,10 @@ import {
   notifySitterVetted,
   notifySitterListed,
 } from "@/lib/sitter-account-notifications";
+import {
+  notifyAdminsOfApplication,
+  notifyAdminsOfBooking,
+} from "@/lib/admin-notifications";
 import type { BusinessSettings } from "@prisma/client";
 import {
   applicationSchema,
@@ -116,6 +120,8 @@ export async function submitApplication(fd: FormData) {
     throw new Error("You are already vetted.");
   }
 
+  const wasResubmitted = existing !== null;
+
   await prisma.sitterApplication.upsert({
     where: { userId: user.id },
     create: {
@@ -140,6 +146,13 @@ export async function submitApplication(fd: FormData) {
       interviewNotes: null,
     },
   });
+  await notifyAdminsOfApplication({
+    name: user.name ?? null,
+    email: user.email ?? null,
+    targetPayRate: d.targetPayRate,
+    resubmitted: wasResubmitted,
+  });
+
   revalidatePath("/sitter");
   redirect("/sitter");
 }
@@ -512,6 +525,16 @@ export async function createBooking(
 
   // Alert the sitter across every enabled channel that a request is waiting.
   await notify("REQUESTED", ["SITTER"], booking, settings);
+  await notifyAdminsOfBooking({
+    id: booking.id,
+    bookingNumber: booking.bookingNumber,
+    parentName: booking.parent.name,
+    sitterName: booking.sitter.name,
+    when: booking.dateTime,
+    durationHours: booking.durationHours,
+    totalAmount: booking.totalAmount,
+    isLastMinute: booking.isLastMinute,
+  });
 
   redirect(`/bookings/${booking.id}`);
 }
