@@ -242,10 +242,11 @@ function ParentBookingSection({
                     )}
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Total {money(b.totalAmount)} ·{" "}
-                    {b.paidAt && b.status === "APPROVED"
-                      ? `Paid ${dt(b.paidAt)} — confirmed`
-                      : STATUS_HINT[b.status]}
+                    {`Total ${money(b.totalAmount)} · ${
+                      b.paidAt && b.status === "APPROVED"
+                        ? `Paid ${dt(b.paidAt)} — confirmed`
+                        : STATUS_HINT[b.status]
+                    }`}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
