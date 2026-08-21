@@ -13,7 +13,7 @@ import { getBusinessSettings } from "@/lib/settings";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, Card, PageTitle } from "@/components/ui";
 import { BOOKING_STATUS_COLOR } from "@/lib/status";
-import { dt, money } from "@/lib/format";
+import { bookingRef, dt, money } from "@/lib/format";
 import { Chat } from "./Chat";
 import { ReportForm } from "./ReportForm";
 import { ReviewForm } from "./ReviewForm";
@@ -85,7 +85,10 @@ export default async function BookingPage({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
-        <PageTitle title="Booking" subtitle={dt(booking.dateTime)} />
+        <PageTitle
+          title={`Booking ${bookingRef(booking.bookingNumber)}`}
+          subtitle={dt(booking.dateTime)}
+        />
         <Badge color={BOOKING_STATUS_COLOR[booking.status]}>
           {booking.status}
         </Badge>

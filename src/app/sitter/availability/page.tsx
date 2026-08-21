@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { addMySlot, deleteMySlot } from "@/lib/actions";
+import { addMySlot, deleteMySlot, editMySlot } from "@/lib/actions";
 import { ActionButton } from "@/components/ActionButton";
 import {
   Badge,
@@ -11,7 +11,7 @@ import {
   buttonClass,
 } from "@/components/ui";
 import { dt } from "@/lib/format";
-import { EditSlot } from "./EditSlot";
+import { SlotEditor } from "@/components/SlotEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -92,8 +92,8 @@ export default async function AvailabilityPage() {
                   </Badge>
                   {slot.status === "OPEN" && (
                     <>
-                      <EditSlot
-                        slotId={slot.id}
+                      <SlotEditor
+                        action={editMySlot.bind(null, slot.id)}
                         startTime={slot.startTime.toISOString()}
                         endTime={slot.endTime.toISOString()}
                         isLastMinuteEligible={slot.isLastMinuteEligible}

@@ -9,7 +9,7 @@ import {
   PageTitle,
 } from "@/components/ui";
 import { BOOKING_STATUS_COLOR, REPORT_STATUS_COLOR } from "@/lib/status";
-import { dt, money, moneyHr } from "@/lib/format";
+import { bookingRef, dt, money, moneyHr } from "@/lib/format";
 import {
   ListingToggle,
   ReportControls,
@@ -18,6 +18,19 @@ import {
 } from "./AdminControls";
 
 export const dynamic = "force-dynamic";
+
+// Total hours of a sitter's upcoming blocks in a given slot state.
+function upcomingHours(
+  slots: { startTime: Date; endTime: Date; status: string }[],
+  status: "OPEN" | "BOOKED",
+): number {
+  return slots
+    .filter((s) => (status === "OPEN" ? s.status === "OPEN" : s.status !== "OPEN"))
+    .reduce(
+      (sum, s) => sum + (s.endTime.getTime() - s.startTime.getTime()) / 3_600_000,
+      0,
+    );
+}
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
@@ -46,6 +59,11 @@ export default async function AdminDashboard() {
     prisma.sitterProfile.findMany({
       include: {
         user: { select: { id: true, name: true, suspended: true } },
+        // Upcoming blocks only, so the hours summary reflects what's bookable.
+        slots: {
+          where: { endTime: { gte: new Date() } },
+          select: { startTime: true, endTime: true, status: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -96,6 +114,9 @@ export default async function AdminDashboard() {
       <div className="flex items-center justify-between">
         <PageTitle title="Admin dashboard" subtitle="Ri'aya operations." />
         <div className="flex gap-2">
+          <ButtonLink href="/admin/bookings" variant="secondary">
+            Bookings
+          </ButtonLink>
           <ButtonLink href="/admin/applications" variant="secondary">
             Applications ({pendingApps})
           </ButtonLink>
@@ -143,6 +164,10 @@ export default async function AdminDashboard() {
                         {sp.isListed ? "Listed" : "Unlisted"}
                       </Badge>
                       {sp.user.suspended && <Badge color="red">Suspended</Badge>}
+                      <span className="text-xs text-slate-500">
+                        {upcomingHours(sp.slots, "OPEN")}h open ·{" "}
+                        {upcomingHours(sp.slots, "BOOKED")}h booked
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -150,7 +175,7 @@ export default async function AdminDashboard() {
                       href={`/admin/sitters/${sp.id}`}
                       className="text-sm font-medium text-brand-coral"
                     >
-                      Availability
+                      Hours
                     </Link>
                     <ListingToggle
                       sitterProfileId={sp.id}
@@ -214,7 +239,15 @@ export default async function AdminDashboard() {
 
       {/* Recent bookings */}
       <section>
-        <h2 className="mb-3 font-semibold">Recent bookings</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">Recent bookings</h2>
+          <Link
+            href="/admin/bookings"
+            className="text-sm font-medium text-brand-coral"
+          >
+            Open bookings calendar
+          </Link>
+        </div>
         {bookings.length === 0 ? (
           <EmptyState>No bookings yet.</EmptyState>
         ) : (
@@ -224,6 +257,9 @@ export default async function AdminDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">
+                      <span className="font-mono text-xs text-slate-400">
+                        {bookingRef(b.bookingNumber)}
+                      </span>{" "}
                       {b.parent.name} → {b.sitter.name}
                     </p>
                     <p className="text-xs text-slate-500">
