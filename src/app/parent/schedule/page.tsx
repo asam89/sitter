@@ -5,7 +5,13 @@ import { requireRole } from "@/lib/session";
 import { getParentBookingEligibility } from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
 import { isLastMinute } from "@/lib/pricing";
-import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  EmptyState,
+  PageTitle,
+} from "@/components/ui";
 import { dt, moneyHr } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +47,16 @@ export default async function SchedulePage() {
         title="Available sitters"
         subtitle="Every sitter here is vetted and listed by Ri'aya. Pick a time to book."
       />
+      <Card className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-brand-teal">
+          Don&apos;t see the time you need? Post a request and every listed
+          sitter can pick it up.
+        </p>
+        <ButtonLink href="/parent/requests/new" variant="secondary">
+          Request a time
+        </ButtonLink>
+      </Card>
+
       {sitters.length === 0 ? (
         <EmptyState>No open availability right now — check back soon.</EmptyState>
       ) : (

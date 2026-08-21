@@ -19,9 +19,9 @@
 
 import { prisma } from "@/lib/prisma";
 import { getEmailProvider, getSmsProvider } from "@/lib/notifications";
-import { bookingRef, dt, money } from "@/lib/format";
+import { bookingRef, dt, money, requestRef } from "@/lib/format";
 
-type AdminAlert = "SIGNUP" | "APPLICATION" | "BOOKING";
+type AdminAlert = "SIGNUP" | "APPLICATION" | "BOOKING" | "REQUEST";
 
 function appUrl(path: string): string {
   const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(/\/$/, "");
@@ -137,6 +137,34 @@ export async function notifyAdminsOfApplication(a: {
       `Requested rate: ${money(a.targetPayRate)}/hr\n` +
       `Submitted: ${dt(new Date())}\n\n` +
       `Review and schedule the interview here: ${appUrl("/admin/applications")}`,
+  );
+}
+
+// A parent posted an open request for a time with no published availability.
+// Nobody is assigned yet — it sits on the board until a sitter claims it or an
+// Admin assigns one.
+export async function notifyAdminsOfOpenRequest(r: {
+  requestNumber: number;
+  parentName: string;
+  when: Date;
+  durationHours: number;
+  numberOfChildren: number;
+  childrenAgeRange: string;
+  city: string | null;
+  isLastMinute: boolean;
+  listedSitterCount: number;
+}): Promise<void> {
+  await alertAdmins(
+    "REQUEST",
+    `Open sitter request ${requestRef(r.requestNumber)}: ${r.parentName}`,
+    `${r.parentName} requested a sitter for a time nobody has open ` +
+      `availability for.\n\n` +
+      `Reference: ${requestRef(r.requestNumber)}\n` +
+      `When: ${dt(r.when)} (${r.durationHours}h)${r.isLastMinute ? " — last minute" : ""}\n` +
+      `Children: ${r.numberOfChildren}, aged ${r.childrenAgeRange}\n` +
+      `City: ${r.city ?? "—"}\n\n` +
+      `${r.listedSitterCount} listed sitter(s) have been notified and can claim ` +
+      `it. You can also assign someone directly: ${appUrl("/admin/requests")}`,
   );
 }
 

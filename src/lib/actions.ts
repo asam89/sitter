@@ -18,10 +18,13 @@ import {
 import {
   notifyAdminsOfApplication,
   notifyAdminsOfBooking,
+  notifyAdminsOfOpenRequest,
 } from "@/lib/admin-notifications";
+import { notifyListedSittersOfRequest } from "@/lib/request-notifications";
 import type { BusinessSettings } from "@prisma/client";
 import {
   applicationSchema,
+  bookingRequestSchema,
   bookingSchema,
   interviewSchema,
   linesToArray,
@@ -537,6 +540,252 @@ export async function createBooking(
   });
 
   redirect(`/bookings/${booking.id}`);
+}
+
+// ---------- Open requests (no published availability) ----------
+
+export type RequestFormState = { error?: string };
+
+// A parent asks for a time nobody has posted availability for. This creates no
+// booking and holds no slot: it goes on a board that Admin and every listed
+// sitter can see, and the first sitter to claim it turns it into a booking.
+export async function createBookingRequest(
+  _prevState: RequestFormState,
+  fd: FormData,
+): Promise<RequestFormState> {
+  const user = await requireRole("PARENT");
+
+  // Same verification gate as a direct booking — a request can become one.
+  const settings = await getBusinessSettings();
+  const account = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: {
+      verificationLevel: true,
+      name: true,
+      parentProfile: { select: { city: true } },
+    },
+  });
+  if (
+    !meetsLevel(
+      account.verificationLevel,
+      settings.minParentVerificationLevelToBook,
+    )
+  ) {
+    return {
+      error: `Please finish verifying your account (${LEVEL_LABEL[settings.minParentVerificationLevelToBook]} required) before requesting a sitter.`,
+    };
+  }
+
+  const parsed = bookingRequestSchema.safeParse({
+    startTime: s(fd, "startTime"),
+    durationHours: s(fd, "durationHours"),
+    childrenAgeRange: s(fd, "childrenAgeRange"),
+    numberOfChildren: s(fd, "numberOfChildren"),
+    notes: s(fd, "notes"),
+    waiverAccepted: s(fd, "waiverAccepted"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+  const d = parsed.data;
+  const startTime = new Date(d.startTime);
+  if (Number.isNaN(startTime.getTime())) {
+    return { error: "Choose a valid date and start time." };
+  }
+  if (startTime.getTime() <= Date.now()) {
+    return { error: "Choose a start time in the future." };
+  }
+
+  const terms = await getActiveTerms();
+  const request = await prisma.bookingRequest.create({
+    data: {
+      parentId: user.id,
+      startTime,
+      durationHours: d.durationHours,
+      childrenAgeRange: d.childrenAgeRange,
+      numberOfChildren: d.numberOfChildren,
+      notes: d.notes || null,
+      waiverVersion: terms.version,
+      waiverAcceptedAt: new Date(),
+    },
+  });
+
+  const summary = {
+    requestNumber: request.requestNumber,
+    startTime: request.startTime,
+    durationHours: request.durationHours,
+    numberOfChildren: request.numberOfChildren,
+    childrenAgeRange: request.childrenAgeRange,
+    city: account.parentProfile?.city ?? null,
+    isLastMinute: isLastMinute(startTime, settings.lastMinuteThresholdHours),
+  };
+  const listedSitterCount = await prisma.sitterProfile.count({
+    where: { isListed: true, user: { suspended: false } },
+  });
+  await notifyListedSittersOfRequest(summary);
+  await notifyAdminsOfOpenRequest({
+    ...summary,
+    when: summary.startTime,
+    parentName: account.name,
+    listedSitterCount,
+  });
+
+  revalidatePath("/parent");
+  redirect("/parent");
+}
+
+// Turn an open request into a booking for a specific sitter. Shared by the
+// sitter claiming it and an Admin assigning it. The sitter volunteered for the
+// time, so there is no separate approval step: the booking lands APPROVED with
+// the address released, awaiting the parent's payment.
+async function fulfilRequest(
+  requestId: string,
+  sitterProfileId: string,
+): Promise<string> {
+  const profile = await prisma.sitterProfile.findUniqueOrThrow({
+    where: { id: sitterProfileId },
+    include: { user: { select: { suspended: true } } },
+  });
+  if (!profile.isListed || profile.user.suspended) {
+    throw new Error("That sitter isn't currently bookable.");
+  }
+  const request = await prisma.bookingRequest.findUniqueOrThrow({
+    where: { id: requestId },
+  });
+  if (request.status !== "OPEN") {
+    throw new Error("That request is no longer open.");
+  }
+
+  const start = request.startTime;
+  const end = new Date(start.getTime() + request.durationHours * 3600 * 1000);
+  const conflict = await prisma.availabilitySlot.findFirst({
+    where: {
+      sitterProfileId: profile.id,
+      startTime: { lt: end },
+      endTime: { gt: start },
+    },
+  });
+  if (conflict) {
+    throw new Error("That window overlaps an existing block for this sitter.");
+  }
+
+  const settings = await getBusinessSettings();
+  const lastMinute = isLastMinute(start, settings.lastMinuteThresholdHours);
+  const price = computePrice(
+    profile.listedPayRate,
+    request.durationHours,
+    lastMinute,
+    settings,
+  );
+
+  // Atomically claim the request so two sitters can't pick up the same one.
+  const claimed = await prisma.bookingRequest.updateMany({
+    where: { id: requestId, status: "OPEN" },
+    data: {
+      status: "CLAIMED",
+      claimedById: profile.userId,
+      claimedAt: new Date(),
+    },
+  });
+  if (claimed.count === 0) {
+    throw new Error("Another sitter just picked that request up.");
+  }
+
+  // The claimed window becomes a BOOKED block so it shows in the hours grid and
+  // blocks any conflicting booking.
+  const now = new Date();
+  const slot = await prisma.availabilitySlot.create({
+    data: {
+      sitterProfileId: profile.id,
+      startTime: start,
+      endTime: end,
+      status: "BOOKED",
+      isLastMinuteEligible: lastMinute,
+    },
+  });
+  const booking = await prisma.booking.create({
+    data: {
+      parentId: request.parentId,
+      sitterId: profile.userId,
+      availabilitySlotId: slot.id,
+      dateTime: start,
+      durationHours: request.durationHours,
+      childrenAgeRange: request.childrenAgeRange,
+      numberOfChildren: request.numberOfChildren,
+      notes: request.notes,
+      listedRateSnapshot: price.listedRate,
+      baseAmount: price.base,
+      isLastMinute: lastMinute,
+      rushFeeAmount: price.rushFee,
+      platformFeeAmount: price.platformFee,
+      totalAmount: price.total,
+      waiverVersion: request.waiverVersion,
+      waiverAcceptedAt: request.waiverAcceptedAt,
+      status: "APPROVED",
+      approvedAt: now,
+      addressReleasedAt: now,
+    },
+    include: notifyInclude,
+  });
+  await prisma.bookingRequest.update({
+    where: { id: requestId },
+    data: { bookingId: booking.id },
+  });
+
+  await notify("APPROVED", ["PARENT", "SITTER"], booking, settings);
+  await notifyAdminsOfBooking({
+    id: booking.id,
+    bookingNumber: booking.bookingNumber,
+    parentName: booking.parent.name,
+    sitterName: booking.sitter.name,
+    when: booking.dateTime,
+    durationHours: booking.durationHours,
+    totalAmount: booking.totalAmount,
+    isLastMinute: booking.isLastMinute,
+  });
+  return booking.id;
+}
+
+export async function claimBookingRequest(requestId: string) {
+  const user = await requireRole("SITTER");
+  const profile = await prisma.sitterProfile.findUnique({
+    where: { userId: user.id },
+  });
+  if (!profile) throw new Error("You need to be vetted before claiming work.");
+  const bookingId = await fulfilRequest(requestId, profile.id);
+  revalidatePath("/sitter/requests");
+  revalidatePath("/sitter");
+  revalidatePath("/admin/requests");
+  redirect(`/bookings/${bookingId}`);
+}
+
+export async function adminAssignBookingRequest(fd: FormData) {
+  await requireRole("ADMIN");
+  const requestId = s(fd, "requestId");
+  const sitterProfileId = s(fd, "sitterProfileId");
+  if (!requestId || !sitterProfileId) throw new Error("Pick a sitter to assign.");
+  await fulfilRequest(requestId, sitterProfileId);
+  revalidatePath("/admin/requests");
+  revalidatePath("/admin");
+}
+
+// Withdraw an open request. The parent can withdraw their own; Admin can
+// withdraw any. Claimed requests are cancelled through their booking instead.
+export async function cancelBookingRequest(requestId: string) {
+  const user = await requireUser();
+  const request = await prisma.bookingRequest.findUniqueOrThrow({
+    where: { id: requestId },
+  });
+  if (request.parentId !== user.id && user.role !== "ADMIN") {
+    throw new Error("Not your request");
+  }
+  await prisma.bookingRequest.updateMany({
+    where: { id: requestId, status: "OPEN" },
+    data: { status: "CANCELLED", cancelledAt: new Date() },
+  });
+  revalidatePath("/parent");
+  revalidatePath("/sitter/requests");
+  revalidatePath("/admin/requests");
 }
 
 // ---------- Sitter: approve / decline ----------

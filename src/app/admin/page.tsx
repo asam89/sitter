@@ -52,6 +52,7 @@ export default async function AdminDashboard() {
     reports,
     revenueAgg,
     rushBookings,
+    openRequests,
   ] = await Promise.all([
     prisma.sitterApplication.count({
       where: { status: { in: ["APPLIED", "UNDER_REVIEW", "INTERVIEW"] } },
@@ -102,6 +103,9 @@ export default async function AdminDashboard() {
         status: { not: "CANCELLED" },
       },
     }),
+    prisma.bookingRequest.count({
+      where: { status: "OPEN", startTime: { gt: new Date() } },
+    }),
   ]);
 
   const bookedRevenue = revenueAgg._sum.totalAmount ?? 0;
@@ -116,6 +120,9 @@ export default async function AdminDashboard() {
         <div className="flex gap-2">
           <ButtonLink href="/admin/bookings" variant="secondary">
             Bookings
+          </ButtonLink>
+          <ButtonLink href="/admin/requests" variant="secondary">
+            Requests ({openRequests})
           </ButtonLink>
           <ButtonLink href="/admin/applications" variant="secondary">
             Applications ({pendingApps})
