@@ -25,7 +25,6 @@ export const TEAM_GROUPS: TeamGroup[] = [
       "Every applicant is reviewed and interviewed by our evaluation team — a group of Early Childhood Educators (ECEs), OCT-certified teachers, and trusted community members. They meet each sitter before anyone is vetted and listed.",
     members: [
       { name: "Marya Khan", title: "Application Evaluator" },
-      { name: "Sameeha Ibrahim", title: "Application Evaluator" },
     ],
   },
   {
@@ -49,7 +48,6 @@ Availability
 • Winter Break: Full availability`,
       },
       { name: "Maryam Saleem", title: "Senior Babysitter" },
-      { name: "Sufia Gulamali", title: "Senior Babysitter" },
     ],
   },
 ];

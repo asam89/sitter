@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { editMySlot } from "@/lib/actions";
 import { buttonClass } from "@/components/ui";
 
 // datetime-local wants "YYYY-MM-DDTHH:mm" in local time.
@@ -12,13 +11,15 @@ function toLocalInput(d: Date): string {
   )}:${pad(d.getMinutes())}`;
 }
 
-export function EditSlot({
-  slotId,
+// Inline editor for one availability slot; `action` is a bound server action
+// (the sitter's own slot or the admin override).
+export function SlotEditor({
+  action,
   startTime,
   endTime,
   isLastMinuteEligible,
 }: {
-  slotId: string;
+  action: (fd: FormData) => Promise<void>;
   startTime: string;
   endTime: string;
   isLastMinuteEligible: boolean;
@@ -40,7 +41,7 @@ export function EditSlot({
   return (
     <form
       action={async (fd) => {
-        await editMySlot(slotId, fd);
+        await action(fd);
         setOpen(false);
       }}
       className="mt-3 w-full space-y-3 border-t border-slate-200 pt-3"

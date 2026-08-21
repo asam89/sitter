@@ -287,6 +287,9 @@ model AvailabilitySlot {
 
 model Booking {
   id                 String    @id @default(cuid())
+  // Short, human-quotable reference (rendered as RB-000123) for support and
+  // admin lookup — the cuid stays the internal/URL identifier.
+  bookingNumber      Int       @unique @default(autoincrement())
   parentId           String
   sitterId           String
   availabilitySlotId String    @unique

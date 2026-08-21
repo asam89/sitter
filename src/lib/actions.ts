@@ -215,6 +215,25 @@ export async function adminAddSlot(sitterProfileId: string, fd: FormData) {
   revalidatePath(`/admin/sitters/${sitterProfileId}`);
 }
 
+// Admin adjusts a sitter's hours. Booked slots stay locked (their booking pins
+// the time) — cancel the booking first if the time has to move.
+export async function adminEditSlot(slotId: string, fd: FormData) {
+  await requireRole("ADMIN");
+  const d = parseSlot(fd);
+  const slot = await prisma.availabilitySlot.findUnique({
+    where: { id: slotId },
+  });
+  await prisma.availabilitySlot.updateMany({
+    where: { id: slotId, status: "OPEN" },
+    data: {
+      startTime: new Date(d.startTime),
+      endTime: new Date(d.endTime),
+      isLastMinuteEligible: d.isLastMinuteEligible,
+    },
+  });
+  if (slot) revalidatePath(`/admin/sitters/${slot.sitterProfileId}`);
+}
+
 export async function adminDeleteSlot(slotId: string) {
   await requireRole("ADMIN");
   const slot = await prisma.availabilitySlot.findUnique({
