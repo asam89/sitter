@@ -87,6 +87,25 @@ export const bookingSchema = z.object({
     }),
 });
 
+// A parent asking for a time nobody has published availability for. There is no
+// slot to reference, so the window is entered directly.
+export const bookingRequestSchema = z.object({
+  startTime: z.string().min(1, "Choose a date and start time."),
+  durationHours: z.coerce
+    .number()
+    .int()
+    .min(1, "Bookings are at least 1 hour.")
+    .max(12, "Requests can be up to 12 hours."),
+  childrenAgeRange: z.string().trim().min(1).max(40),
+  numberOfChildren: z.coerce.number().int().min(1).max(10),
+  notes: z.string().max(1000).optional().or(z.literal("")),
+  waiverAccepted: z
+    .union([z.literal("on"), z.literal("true"), z.boolean()])
+    .refine((v) => v === "on" || v === "true" || v === true, {
+      message: "You must accept the waiver to request a sitter.",
+    }),
+});
+
 export const reportSchema = z.object({
   bookingId: z.string().min(1),
   reason: z.string().min(3).max(2000),

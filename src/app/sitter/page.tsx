@@ -25,6 +25,13 @@ export default async function SitterDashboard() {
       include: { slots: { where: { status: "OPEN" } } },
     }),
   ]);
+  // Requests from families for times nobody has posted availability for; any
+  // listed sitter can pick these up.
+  const openRequestCount = profile?.isListed
+    ? await prisma.bookingRequest.count({
+        where: { status: "OPEN", startTime: { gt: new Date() } },
+      })
+    : 0;
   const bookings = await prisma.booking.findMany({
     where: { sitterId: user.id },
     orderBy: { dateTime: "desc" },
@@ -118,6 +125,11 @@ export default async function SitterDashboard() {
             <ButtonLink href="/sitter/availability">
               Manage availability ({profile.slots.length} open)
             </ButtonLink>
+            {profile.isListed && (
+              <ButtonLink href="/sitter/requests" variant="secondary">
+                Open requests ({openRequestCount})
+              </ButtonLink>
+            )}
             {profile.stripeAccountId ? (
               <Badge color="green">Payouts connected</Badge>
             ) : (

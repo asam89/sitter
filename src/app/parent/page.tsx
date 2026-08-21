@@ -9,20 +9,26 @@ import {
   PageTitle,
 } from "@/components/ui";
 import { BOOKING_STATUS_COLOR } from "@/lib/status";
-import { dt, money } from "@/lib/format";
+import { dt, money, requestRef } from "@/lib/format";
 import { getParentBookingEligibility, LEVEL_LABEL } from "@/lib/verification";
+import { cancelBookingRequest } from "@/lib/actions";
+import { ActionButton } from "@/components/ActionButton";
 
 export const dynamic = "force-dynamic";
 
 export default async function ParentDashboard() {
   const user = await requireRole("PARENT");
-  const [bookings, eligibility] = await Promise.all([
+  const [bookings, eligibility, openRequests] = await Promise.all([
     prisma.booking.findMany({
       where: { parentId: user.id },
       orderBy: { dateTime: "desc" },
       include: { sitter: { select: { name: true } } },
     }),
     getParentBookingEligibility(user.id),
+    prisma.bookingRequest.findMany({
+      where: { parentId: user.id, status: "OPEN" },
+      orderBy: { startTime: "asc" },
+    }),
   ]);
   const active = bookings.filter((b) =>
     ["REQUESTED", "APPROVED", "IN_PROGRESS"].includes(b.status),
@@ -100,6 +106,60 @@ export default async function ParentDashboard() {
           {eligibility.canBook ? "View availability" : "Verify to book"}
         </ButtonLink>
       </Card>
+
+      <Card className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-brand-ink">
+            Need a time nobody has posted?
+          </h2>
+          <p className="text-sm text-brand-teal-light">
+            Post the date and time you need — our team and every listed sitter
+            see it, and the first one free picks it up.
+          </p>
+        </div>
+        <ButtonLink
+          href={eligibility.canBook ? "/parent/requests/new" : "/parent/verify"}
+          variant="secondary"
+        >
+          {eligibility.canBook ? "Request a sitter" : "Verify to request"}
+        </ButtonLink>
+      </Card>
+
+      {openRequests.length > 0 && (
+        <section>
+          <h2 className="mb-3 font-semibold">Waiting for a sitter</h2>
+          <div className="space-y-3">
+            {openRequests.map((r) => (
+              <Card key={r.id}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">
+                      {dt(r.startTime)} · {r.durationHours}h
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      {r.numberOfChildren} child(ren), ages {r.childrenAgeRange}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {requestRef(r.requestNumber)} · sitters have been notified
+                      — we&apos;ll email you as soon as one picks it up.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge color="amber">OPEN REQUEST</Badge>
+                    <ActionButton
+                      action={cancelBookingRequest.bind(null, r.id)}
+                      variant="secondary"
+                      confirm="Withdraw this request?"
+                    >
+                      Withdraw
+                    </ActionButton>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
 
       {bookings.length === 0 ? (
         <section>

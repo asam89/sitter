@@ -11,6 +11,11 @@ export function bookingRef(bookingNumber: number): string {
   return `RB-${String(bookingNumber).padStart(6, "0")}`;
 }
 
+// Human-quotable open-request reference, e.g. RQ-000042.
+export function requestRef(requestNumber: number): string {
+  return `RQ-${String(requestNumber).padStart(6, "0")}`;
+}
+
 const fmt = new Intl.DateTimeFormat("en-CA", {
   dateStyle: "medium",
   timeStyle: "short",

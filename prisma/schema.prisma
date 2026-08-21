@@ -34,6 +34,14 @@ enum SlotStatus {
   BOOKED
 }
 
+// An open call for a sitter: a parent asked for a time nobody has published
+// availability for. Sitters (or Admin) pick it up, which turns it into a Booking.
+enum BookingRequestStatus {
+  OPEN
+  CLAIMED
+  CANCELLED
+}
+
 enum BookingStatus {
   REQUESTED   // parent booked; slot held; awaiting sitter approval
   APPROVED    // sitter approved at the Admin-set rate; address released; parent pays into escrow
@@ -120,6 +128,8 @@ model User {
 
   parentBookings      Booking[]           @relation("ParentBookings")
   sitterBookings      Booking[]           @relation("SitterBookings")
+  bookingRequests     BookingRequest[]    @relation("ParentBookingRequests")
+  requestsClaimed     BookingRequest[]    @relation("SitterClaimedRequests")
   applicationsReviewed SitterApplication[] @relation("ApplicationReviewer")
   messages            Message[]
   reportsMade         Report[]            @relation("Reporter")
@@ -334,10 +344,46 @@ model Booking {
   reports         Report[]
   notifications   Notification[]
   reviews         Review[]
+  openRequest     BookingRequest?
 
   @@index([status])
   @@index([parentId])
   @@index([sitterId])
+}
+
+// A parent's request for a time no sitter has published availability for. It is
+// broadcast to Admin and every listed sitter; the first sitter to claim it (or
+// an Admin assignment) creates the AvailabilitySlot + Booking, so a request is
+// never itself a commitment. The waiver is accepted up front, at request time.
+//
+// The hourly rate is deliberately NOT snapshotted here: it depends on which
+// sitter picks the request up, so pricing is computed at claim time from that
+// sitter's Admin-set listedPayRate.
+model BookingRequest {
+  id               String               @id @default(cuid())
+  requestNumber    Int                  @unique @default(autoincrement())
+  parentId         String
+  startTime        DateTime
+  durationHours    Int
+  childrenAgeRange String
+  numberOfChildren Int                  @default(1)
+  notes            String?
+  waiverVersion    String
+  waiverAcceptedAt DateTime
+  status           BookingRequestStatus @default(OPEN)
+  claimedById      String? // sitter who picked it up
+  claimedAt        DateTime?
+  bookingId        String?              @unique // the Booking created on claim
+  cancelledAt      DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  parent    User     @relation("ParentBookingRequests", fields: [parentId], references: [id], onDelete: Cascade)
+  claimedBy User?    @relation("SitterClaimedRequests", fields: [claimedById], references: [id])
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  @@index([status, startTime])
+  @@index([parentId])
 }
 
 // Audit row for each booking notification dispatch attempt (per recipient/channel).
