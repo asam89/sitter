@@ -198,6 +198,7 @@ type ParentBooking = {
   childrenAgeRange: string;
   isLastMinute: boolean;
   totalAmount: number;
+  paidAt: Date | null;
   status: keyof typeof BOOKING_STATUS_COLOR;
   sitter: { name: string };
 };
@@ -241,11 +242,21 @@ function ParentBookingSection({
                     )}
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Total {money(b.totalAmount)} · {STATUS_HINT[b.status]}
+                    Total {money(b.totalAmount)} ·{" "}
+                    {b.paidAt && b.status === "APPROVED"
+                      ? `Paid ${dt(b.paidAt)} — confirmed`
+                      : STATUS_HINT[b.status]}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                  <Badge color={BOOKING_STATUS_COLOR[b.status]}>{b.status}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge color={BOOKING_STATUS_COLOR[b.status]}>
+                      {b.status}
+                    </Badge>
+                    {b.paidAt && b.status !== "CANCELLED" && (
+                      <Badge color="green">PAID</Badge>
+                    )}
+                  </div>
                   <Link
                     href={`/bookings/${b.id}`}
                     className="text-sm font-medium text-brand-coral"
