@@ -7,6 +7,8 @@ import { getActiveTerms } from "@/lib/terms";
 import { createBookingRequest } from "@/lib/actions";
 import { Card, PageTitle } from "@/components/ui";
 import { moneyHr } from "@/lib/format";
+import { effectiveRate } from "@/lib/pricing";
+import { refundPolicyLines } from "@/lib/cancellation";
 import { RequestForm } from "./RequestForm";
 
 export const dynamic = "force-dynamic";
@@ -29,14 +31,16 @@ export default async function NewRequestPage() {
   const [settings, terms, rates] = await Promise.all([
     getBusinessSettings(),
     getActiveTerms(),
-    prisma.sitterProfile.aggregate({
+    prisma.sitterProfile.findMany({
       where: { isListed: true, user: { suspended: false } },
-      _min: { listedPayRate: true },
-      _max: { listedPayRate: true },
+      select: { baseRate: true, listedPayRate: true },
     }),
   ]);
-  const minRate = rates._min.listedPayRate;
-  const maxRate = rates._max.listedPayRate;
+  // Sitters set their own rates, so the range comes from the effective rate of
+  // each listed sitter rather than a single admin-set number.
+  const effectiveRates = rates.map(effectiveRate);
+  const minRate = effectiveRates.length ? Math.min(...effectiveRates) : null;
+  const maxRate = effectiveRates.length ? Math.max(...effectiveRates) : null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -60,14 +64,24 @@ export default async function NewRequestPage() {
         </ol>
         <p className="mt-3 rounded-lg bg-brand-cream px-3 py-2 text-xs text-brand-teal">
           {minRate === null || maxRate === null
-            ? "Rates are set by Ri'aya per sitter, so your total is confirmed once a sitter picks up your request."
+            ? "Each sitter sets their own rate, so your total is confirmed once a sitter picks up your request."
             : minRate === maxRate
-              ? `Listed rates are ${moneyHr(minRate)}; your itemised total is confirmed once a sitter picks up your request.`
-              : `Listed rates currently range ${moneyHr(minRate)}–${moneyHr(maxRate)} depending on the sitter; your itemised total is confirmed once one picks up your request.`}
+              ? `Sitters' rates are ${moneyHr(minRate)}; your itemised total (plus Ri'aya's fee) is confirmed once a sitter picks up your request.`
+              : `Sitters' rates currently range ${moneyHr(minRate)}–${moneyHr(maxRate)}; your itemised total (plus Ri'aya's fee) is confirmed once one picks up your request.`}
           {" "}
           Requests starting within {settings.lastMinuteThresholdHours}h also
-          carry the last-minute rush fee.
+          carry the last-minute rush fee, and bookings are a minimum of{" "}
+          {settings.minBookingHours} hours.
         </p>
+      </Card>
+
+      <Card>
+        <h2 className="font-semibold">If plans change</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
+          {refundPolicyLines(settings).map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
       </Card>
 
       <RequestForm
@@ -75,6 +89,7 @@ export default async function NewRequestPage() {
         termsVersion={terms.version}
         termsBody={terms.body}
         minStartTime={localInputValue(new Date())}
+        minHours={settings.minBookingHours}
       />
     </div>
   );

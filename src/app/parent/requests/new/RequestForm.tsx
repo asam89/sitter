@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useFormState } from "react-dom";
 import { Card, buttonClass } from "@/components/ui";
+import { ChildMedicalFields } from "@/components/ChildMedicalFields";
 import type { RequestFormState } from "@/lib/actions";
 
 export function RequestForm({
@@ -10,6 +11,7 @@ export function RequestForm({
   termsVersion,
   termsBody,
   minStartTime,
+  minHours,
 }: {
   action: (
     state: RequestFormState,
@@ -18,8 +20,10 @@ export function RequestForm({
   termsVersion: string;
   termsBody: string;
   minStartTime: string;
+  minHours: number;
 }) {
   const [accepted, setAccepted] = useState(false);
+  const [children, setChildren] = useState(1);
   const [state, formAction] = useFormState(action, {});
   const input =
     "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
@@ -44,9 +48,9 @@ export function RequestForm({
               type="number"
               name="durationHours"
               required
-              min={1}
+              min={minHours}
               max={12}
-              defaultValue={3}
+              defaultValue={Math.max(minHours, 3)}
               className={input}
             />
           </label>
@@ -67,7 +71,8 @@ export function RequestForm({
               required
               min={1}
               max={10}
-              defaultValue={1}
+              value={children}
+              onChange={(e) => setChildren(Number(e.target.value) || 1)}
               className={input}
             />
           </label>
@@ -77,10 +82,12 @@ export function RequestForm({
           <textarea name="notes" rows={2} className={input} />
         </label>
         <p className="text-xs text-slate-500">
-          We only collect an age range and count — never a child&apos;s name or
-          photo. Sitters see your city, not your address; the address is released
-          only once a sitter picks up your request.
+          Sitters see your city, not your address; the address is released only
+          once a sitter picks up your request. Health details below stay
+          encrypted until then.
         </p>
+
+        <ChildMedicalFields count={children} />
 
         {/* Same click-through waiver as a direct booking — a claimed request
             becomes a booking without asking the parent again. */}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { effectiveRate } from "@/lib/pricing";
 import { requireRole } from "@/lib/session";
 import { adminAssignBookingRequest, cancelBookingRequest } from "@/lib/actions";
 import { ActionButton } from "@/components/ActionButton";
@@ -33,6 +34,7 @@ export default async function AdminRequestsPage() {
       where: { isListed: true, user: { suspended: false } },
       select: {
         id: true,
+        baseRate: true,
         listedPayRate: true,
         city: true,
         user: { select: { name: true } },
@@ -43,7 +45,7 @@ export default async function AdminRequestsPage() {
 
   const sitterOptions = sitters.map((s) => ({
     id: s.id,
-    label: `${s.user.name} · ${moneyHr(s.listedPayRate)}${s.city ? ` · ${s.city}` : ""}`,
+    label: `${s.user.name} · ${moneyHr(effectiveRate(s))}${s.city ? ` · ${s.city}` : ""}`,
   }));
   const open = requests.filter((r) => r.status === "OPEN");
 

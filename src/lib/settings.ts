@@ -33,6 +33,7 @@ const DEFAULTS = {
     process.env.MIN_PARENT_VERIFICATION_LEVEL_TO_BOOK,
     "LEVEL_1_CONTACT",
   ),
+  minBookingHours: Number(process.env.MIN_BOOKING_HOURS ?? 2),
 } as const;
 
 // Loads the single BusinessSettings row, creating it from env defaults on first
@@ -55,8 +56,20 @@ export type BusinessSettingsInput = {
   completionConfirmedBy: CompletionConfirmer;
   notifySmsEnabled: boolean;
   notifyWhatsappEnabled: boolean;
-  cancellationWindowHours: number;
-  cancellationChargePercent: number;
+  minBookingHours: number;
+  extraChildFeeAmount: number;
+  lateNightFeeAmount: number;
+  lateNightStartHour: number;
+  lateNightEndHour: number;
+  overnightFeeAmount: number;
+  overnightStartHour: number;
+  overnightEndHour: number;
+  refundFullBeforeHours: number;
+  lateCancelWindowHours: number;
+  midRefundPercent: number;
+  lateRefundPercent: number;
+  afterStartRefundPercent: number;
+  sitterCancelRefundPercent: number;
 };
 
 export async function updateBusinessSettings(

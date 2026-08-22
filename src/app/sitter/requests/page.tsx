@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { claimBookingRequest } from "@/lib/actions";
 import { getBusinessSettings } from "@/lib/settings";
-import { computePrice, isLastMinute } from "@/lib/pricing";
+import { computePrice, effectiveRate, isLastMinute } from "@/lib/pricing";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, ButtonLink, Card, EmptyState, PageTitle } from "@/components/ui";
 import { dt, money, requestRef } from "@/lib/format";
@@ -75,10 +75,12 @@ export default async function SitterRequestsPage() {
               settings.lastMinuteThresholdHours,
             );
             const price = computePrice(
-              profile.listedPayRate,
+              effectiveRate(profile),
               r.durationHours,
               lastMinute,
               settings,
+              r.startTime,
+              r.numberOfChildren,
             );
             // Claiming would create a booked block, so an overlap with anything
             // already on the sitter's calendar blocks it.

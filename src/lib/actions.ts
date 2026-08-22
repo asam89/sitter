@@ -1,12 +1,24 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { differenceInMinutes } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireRole } from "@/lib/session";
 import { getBusinessSettings, updateBusinessSettings } from "@/lib/settings";
-import { computePrice, isLastMinute } from "@/lib/pricing";
+import {
+  computePrice,
+  effectiveRate,
+  isLastMinute,
+  sitterPayout,
+} from "@/lib/pricing";
+import { computeRefund } from "@/lib/cancellation";
+import {
+  copyRequestMedicalToBooking,
+  parseChildMedical,
+  storeChildMedical,
+} from "@/lib/child-medical";
 import { getActiveTerms } from "@/lib/terms";
 import { meetsLevel, LEVEL_LABEL } from "@/lib/verification";
 import { stripeEnabled, stripe } from "@/lib/stripe";
@@ -31,6 +43,7 @@ import {
   reportSchema,
   reviewSchema,
   settingsSchema,
+  sitterRateSchema,
   slotSchema,
   vetSchema,
 } from "@/lib/validation";
@@ -44,6 +57,20 @@ function slotDurationHours(startTime: Date, endTime: Date): number {
   return Math.max(1, Math.round(differenceInMinutes(endTime, startTime) / 60));
 }
 
+// Evidence captured alongside a waiver acceptance. Behind a proxy the client IP
+// arrives in x-forwarded-for (first hop), which is how prod (nginx) serves.
+function waiverAcceptanceContext(): {
+  ip: string | null;
+  userAgent: string | null;
+} {
+  const h = headers();
+  const forwarded = h.get("x-forwarded-for");
+  return {
+    ip: forwarded?.split(",")[0]?.trim() || h.get("x-real-ip") || null,
+    userAgent: h.get("user-agent"),
+  };
+}
+
 // A booking loaded with the fields needed to notify both parties.
 type BookingForNotify = {
   id: string;
@@ -51,6 +78,7 @@ type BookingForNotify = {
   durationHours: number;
   baseAmount: number;
   rushFeeAmount: number;
+  platformFeeAmount: number;
   totalAmount: number;
   parentId: string;
   sitterId: string;
@@ -80,7 +108,7 @@ async function notify(
     when: booking.dateTime,
     durationHours: booking.durationHours,
     city: booking.availabilitySlot.sitterProfile.city,
-    sitterEarns: booking.baseAmount + booking.rushFeeAmount,
+    sitterEarns: sitterPayout(booking),
     total: booking.totalAmount,
   };
   for (const audience of audiences) {
@@ -158,6 +186,25 @@ export async function submitApplication(fd: FormData) {
 
   revalidatePath("/sitter");
   redirect("/sitter");
+}
+
+// ---------- Sitter: own hourly rate ----------
+
+// Sitters price their own time. Existing and future bookings keep the rate they
+// were quoted at (pricing is snapshotted on the booking), so a change here only
+// affects new bookings.
+export async function setMyRate(fd: FormData) {
+  const user = await requireRole("SITTER");
+  const parsed = sitterRateSchema.safeParse({ baseRate: s(fd, "baseRate") });
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? "Invalid rate");
+  }
+  await prisma.sitterProfile.update({
+    where: { userId: user.id },
+    data: { baseRate: parsed.data.baseRate },
+  });
+  revalidatePath("/sitter");
+  revalidatePath("/parent/schedule");
 }
 
 // ---------- Sitter / Admin: availability ----------
@@ -404,8 +451,20 @@ export async function updateSettings(fd: FormData) {
     completionConfirmedBy: s(fd, "completionConfirmedBy"),
     notifySmsEnabled: s(fd, "notifySmsEnabled"),
     notifyWhatsappEnabled: s(fd, "notifyWhatsappEnabled"),
-    cancellationWindowHours: s(fd, "cancellationWindowHours"),
-    cancellationChargePercent: s(fd, "cancellationChargePercent"),
+    minBookingHours: s(fd, "minBookingHours"),
+    extraChildFeeAmount: s(fd, "extraChildFeeAmount"),
+    lateNightFeeAmount: s(fd, "lateNightFeeAmount"),
+    lateNightStartHour: s(fd, "lateNightStartHour"),
+    lateNightEndHour: s(fd, "lateNightEndHour"),
+    overnightFeeAmount: s(fd, "overnightFeeAmount"),
+    overnightStartHour: s(fd, "overnightStartHour"),
+    overnightEndHour: s(fd, "overnightEndHour"),
+    refundFullBeforeHours: s(fd, "refundFullBeforeHours"),
+    lateCancelWindowHours: s(fd, "lateCancelWindowHours"),
+    midRefundPercent: s(fd, "midRefundPercent"),
+    lateRefundPercent: s(fd, "lateRefundPercent"),
+    afterStartRefundPercent: s(fd, "afterStartRefundPercent"),
+    sitterCancelRefundPercent: s(fd, "sitterCancelRefundPercent"),
   });
   if (!parsed.success) throw new Error("Invalid settings");
   await updateBusinessSettings(parsed.data);
@@ -483,16 +542,24 @@ export async function createBooking(
   const settings = await getBusinessSettings();
   const terms = await getActiveTerms();
   const duration = slotDurationHours(slot.startTime, slot.endTime);
+  if (duration < settings.minBookingHours) {
+    return {
+      error: `Bookings are a minimum of ${settings.minBookingHours} hours — this block is only ${duration}h.`,
+    };
+  }
   const lastMinute = isLastMinute(
     slot.startTime,
     settings.lastMinuteThresholdHours,
   );
   const price = computePrice(
-    slot.sitterProfile.listedPayRate,
+    effectiveRate(slot.sitterProfile),
     duration,
     lastMinute,
     settings,
+    slot.startTime,
+    d.numberOfChildren,
   );
+  const acceptance = waiverAcceptanceContext();
 
   // Atomically claim the slot so two parents can't book the same window.
   const claimed = await prisma.availabilitySlot.updateMany({
@@ -517,14 +584,26 @@ export async function createBooking(
       baseAmount: price.base,
       isLastMinute: lastMinute,
       rushFeeAmount: price.rushFee,
+      extraChildFeeAmount: price.extraChildFee,
+      lateNightFeeAmount: price.lateNightFee,
+      overnightFeeAmount: price.overnightFee,
       platformFeeAmount: price.platformFee,
       totalAmount: price.total,
       waiverVersion: terms.version,
       waiverAcceptedAt: new Date(),
+      waiverAcceptedIp: acceptance.ip,
+      waiverAcceptedUserAgent: acceptance.userAgent,
       status: "REQUESTED",
     },
     include: notifyInclude,
   });
+
+  // Health details, encrypted and released to the sitter only once paid.
+  await storeChildMedical(
+    { bookingId: booking.id },
+    parseChildMedical(fd),
+    booking.dateTime,
+  );
 
   // Alert the sitter across every enabled channel that a request is waiting.
   await notify("REQUESTED", ["SITTER"], booking, settings);
@@ -595,8 +674,14 @@ export async function createBookingRequest(
   if (startTime.getTime() <= Date.now()) {
     return { error: "Choose a start time in the future." };
   }
+  if (d.durationHours < settings.minBookingHours) {
+    return {
+      error: `Bookings are a minimum of ${settings.minBookingHours} hours.`,
+    };
+  }
 
   const terms = await getActiveTerms();
+  const acceptance = waiverAcceptanceContext();
   const request = await prisma.bookingRequest.create({
     data: {
       parentId: user.id,
@@ -607,8 +692,16 @@ export async function createBookingRequest(
       notes: d.notes || null,
       waiverVersion: terms.version,
       waiverAcceptedAt: new Date(),
+      waiverAcceptedIp: acceptance.ip,
+      waiverAcceptedUserAgent: acceptance.userAgent,
     },
   });
+
+  await storeChildMedical(
+    { bookingRequestId: request.id },
+    parseChildMedical(fd),
+    request.startTime,
+  );
 
   const summary = {
     requestNumber: request.requestNumber,
@@ -672,10 +765,12 @@ async function fulfilRequest(
   const settings = await getBusinessSettings();
   const lastMinute = isLastMinute(start, settings.lastMinuteThresholdHours);
   const price = computePrice(
-    profile.listedPayRate,
+    effectiveRate(profile),
     request.durationHours,
     lastMinute,
     settings,
+    start,
+    request.numberOfChildren,
   );
 
   // Atomically claim the request so two sitters can't pick up the same one.
@@ -717,10 +812,15 @@ async function fulfilRequest(
       baseAmount: price.base,
       isLastMinute: lastMinute,
       rushFeeAmount: price.rushFee,
+      extraChildFeeAmount: price.extraChildFee,
+      lateNightFeeAmount: price.lateNightFee,
+      overnightFeeAmount: price.overnightFee,
       platformFeeAmount: price.platformFee,
       totalAmount: price.total,
       waiverVersion: request.waiverVersion,
       waiverAcceptedAt: request.waiverAcceptedAt,
+      waiverAcceptedIp: request.waiverAcceptedIp,
+      waiverAcceptedUserAgent: request.waiverAcceptedUserAgent,
       status: "APPROVED",
       approvedAt: now,
       addressReleasedAt: now,
@@ -731,6 +831,7 @@ async function fulfilRequest(
     where: { id: requestId },
     data: { bookingId: booking.id },
   });
+  await copyRequestMedicalToBooking(requestId, booking.id, start);
 
   await notify("APPROVED", ["PARENT", "SITTER"], booking, settings);
   await notifyAdminsOfBooking({
@@ -924,7 +1025,7 @@ export async function completeBooking(bookingId: string) {
 
   if (stripeEnabled && stripe && booking.sitter.sitterProfile?.stripeAccountId) {
     await stripe.transfers.create({
-      amount: (booking.baseAmount + booking.rushFeeAmount) * 100,
+      amount: sitterPayout(booking) * 100,
       currency: "cad",
       destination: booking.sitter.sitterProfile.stripeAccountId,
       metadata: { bookingId },
@@ -943,7 +1044,15 @@ export async function completeBooking(bookingId: string) {
   revalidatePath("/admin");
 }
 
-export async function cancelBooking(bookingId: string) {
+// Form wrapper so the canceller can say why (stored on the booking, shown to
+// the other party and to Admin).
+export async function cancelBookingWithReason(fd: FormData) {
+  const bookingId = String(fd.get("bookingId") ?? "");
+  const reason = String(fd.get("reason") ?? "");
+  await cancelBooking(bookingId, reason);
+}
+
+export async function cancelBooking(bookingId: string, reason?: string) {
   const user = await requireUser();
   const booking = await prisma.booking.findUniqueOrThrow({
     where: { id: bookingId },
@@ -957,20 +1066,38 @@ export async function cancelBooking(bookingId: string) {
   if (["COMPLETED", "CANCELLED", "DECLINED"].includes(booking.status)) return;
 
   const settings = await getBusinessSettings();
-  // Late-cancellation charge: if a paid booking is cancelled by the parent
-  // within the configurable window of the start time, apply a percent of base.
-  let cancellationCharge = 0;
-  const hoursToStart =
-    (booking.dateTime.getTime() - Date.now()) / (3600 * 1000);
-  const withinWindow = hoursToStart < settings.cancellationWindowHours;
-  if (
-    booking.paidAt &&
-    withinWindow &&
-    settings.cancellationChargePercent > 0
-  ) {
-    cancellationCharge = Math.round(
-      (booking.baseAmount * settings.cancellationChargePercent) / 100,
-    );
+  // Tiered refund: who cancelled, and (for a parent) how much notice they gave.
+  // A sitter or Admin cancellation always makes the parent whole.
+  const actorRole =
+    user.role === "ADMIN" && !isParticipant
+      ? "ADMIN"
+      : booking.sitterId === user.id
+        ? "SITTER"
+        : booking.parentId === user.id
+          ? "PARENT"
+          : "ADMIN";
+  const refund = computeRefund({
+    actorRole,
+    paidAmount: booking.paidAt ? booking.totalAmount : 0,
+    start: booking.dateTime,
+    settings,
+  });
+
+  // Refund the real charge where one exists; the mock-payment path just records
+  // the outcome. A processor failure must not leave the booking half-cancelled.
+  let refundProcessorId: string | null = null;
+  let refundProcessorStatus: string | null = null;
+  if (refund.refundAmount > 0) {
+    if (stripeEnabled && stripe && booking.stripePaymentIntentId) {
+      const created = await stripe.refunds.create({
+        payment_intent: booking.stripePaymentIntentId,
+        amount: refund.refundAmount * 100,
+      });
+      refundProcessorId = created.id;
+      refundProcessorStatus = created.status ?? null;
+    } else {
+      refundProcessorStatus = "mock";
+    }
   }
 
   await prisma.$transaction([
@@ -979,7 +1106,15 @@ export async function cancelBooking(bookingId: string) {
       data: {
         status: "CANCELLED",
         cancelledAt: new Date(),
-        cancellationChargeAmount: cancellationCharge,
+        cancellationChargeAmount: refund.forfeitAmount,
+        refundAmount: refund.refundAmount,
+        refundPercent: booking.paidAt ? refund.refundPercent : null,
+        refundTier: refund.tier,
+        cancelledByUserId: user.id,
+        cancelledByRole: actorRole,
+        cancellationReason: reason?.trim() || null,
+        refundProcessorId,
+        refundProcessorStatus,
       },
     }),
     prisma.availabilitySlot.update({

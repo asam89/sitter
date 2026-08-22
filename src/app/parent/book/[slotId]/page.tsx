@@ -4,7 +4,8 @@ import { requireRole } from "@/lib/session";
 import { getParentBookingEligibility } from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
-import { computePrice, isLastMinute } from "@/lib/pricing";
+import { computePrice, effectiveRate, isLastMinute } from "@/lib/pricing";
+import { refundPolicyLines } from "@/lib/cancellation";
 import { createBooking } from "@/lib/actions";
 import { differenceInMinutes } from "date-fns";
 import { Card, PageTitle } from "@/components/ui";
@@ -39,12 +40,17 @@ export default async function BookSlotPage({
     slot.startTime,
     settings.lastMinuteThresholdHours,
   );
+  // Quoted for one child; each additional child adds a flat fee, itemised on
+  // the booking once the parent has said how many children there are.
   const price = computePrice(
-    slot.sitterProfile.listedPayRate,
+    effectiveRate(slot.sitterProfile),
     duration,
     lastMinute,
     settings,
+    slot.startTime,
+    1,
   );
+  const tooShort = duration < settings.minBookingHours;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -58,7 +64,7 @@ export default async function BookSlotPage({
         <h2 className="font-semibold">Price</h2>
         <dl className="mt-3 space-y-1.5 text-sm">
           <Row
-            label={`Listed rate — ${money(price.listedRate)}/hr × ${duration}h`}
+            label={`Sitter's rate — ${money(price.listedRate)}/hr × ${duration}h`}
             value={money(price.base)}
           />
           {price.rushFee > 0 && (
@@ -74,15 +80,38 @@ export default async function BookSlotPage({
               value={money(price.rushFee)}
             />
           )}
+          {price.lateNightFee > 0 && (
+            <Row
+              label={`Late-night fee (${settings.lateNightStartHour}:00–${settings.lateNightEndHour}:00)`}
+              value={money(price.lateNightFee)}
+            />
+          )}
+          {price.overnightFee > 0 && (
+            <Row
+              label={`Overnight fee (${settings.overnightStartHour}:00–${settings.overnightEndHour}:00)`}
+              value={money(price.overnightFee)}
+            />
+          )}
+          {settings.extraChildFeeAmount > 0 && (
+            <Row
+              label="Each additional child"
+              value={`+ ${money(settings.extraChildFeeAmount)}`}
+            />
+          )}
           <Row
-            label={`Platform fee${settings.platformFeeType === "PERCENT" ? ` (${settings.platformFeeAmount}%)` : ""}`}
+            label={`Ri'aya fee${settings.platformFeeType === "PERCENT" ? ` (${settings.platformFeeAmount}%)` : ""}`}
             value={money(price.platformFee)}
           />
           <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 font-semibold">
-            <span>Total</span>
+            <span>
+              Total{settings.extraChildFeeAmount > 0 ? " (1 child)" : ""}
+            </span>
             <span>{money(price.total)}</span>
           </div>
         </dl>
+        <p className="mt-3 text-xs text-slate-500">
+          Once the sitter accepts, you pay in full to confirm the booking.
+        </p>
         {lastMinute && (
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
             This booking is within {settings.lastMinuteThresholdHours}h of the
@@ -91,12 +120,32 @@ export default async function BookSlotPage({
         )}
       </Card>
 
-      <BookingForm
-        slotId={slot.id}
-        action={createBooking}
-        termsVersion={terms.version}
-        termsBody={terms.body}
-      />
+      {/* Cancellation terms, disclosed before any commitment. */}
+      <Card>
+        <h2 className="font-semibold">If plans change</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
+          {refundPolicyLines(settings).map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </Card>
+
+      {tooShort ? (
+        <Card>
+          <p className="text-sm text-slate-700">
+            This block is {duration}h and bookings are a minimum of{" "}
+            {settings.minBookingHours} hours. Ask this sitter for a longer block,
+            or post a request for the time you need.
+          </p>
+        </Card>
+      ) : (
+        <BookingForm
+          slotId={slot.id}
+          action={createBooking}
+          termsVersion={terms.version}
+          termsBody={terms.body}
+        />
+      )}
     </div>
   );
 }

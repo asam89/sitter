@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { effectiveRate } from "@/lib/pricing";
 import { requireRole } from "@/lib/session";
 import {
   Badge,
@@ -130,6 +131,9 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/parents" variant="secondary">
             Parents
           </ButtonLink>
+          <ButtonLink href="/admin/broadcast" variant="secondary">
+            Email parents
+          </ButtonLink>
           <ButtonLink href="/admin/settings" variant="secondary">
             Business rules
           </ButtonLink>
@@ -163,7 +167,7 @@ export default async function AdminDashboard() {
                     <p className="font-medium">
                       {sp.user.name}{" "}
                       <span className="text-sm text-slate-400">
-                        {moneyHr(sp.listedPayRate)}
+                        {moneyHr(effectiveRate(sp))}
                       </span>
                     </p>
                     <div className="mt-1 flex items-center gap-2">

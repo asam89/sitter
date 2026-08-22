@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { getParentBookingEligibility } from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
-import { isLastMinute } from "@/lib/pricing";
+import { effectiveRate, isLastMinute } from "@/lib/pricing";
 import {
   Badge,
   ButtonLink,
@@ -70,7 +70,7 @@ export default async function SchedulePage() {
                     <p className="mt-1 text-sm text-slate-600">{sp.bio}</p>
                   )}
                 </div>
-                <Badge color="indigo">{moneyHr(sp.listedPayRate)}</Badge>
+                <Badge color="indigo">{moneyHr(effectiveRate(sp))}</Badge>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {sp.slots.map((slot) => {

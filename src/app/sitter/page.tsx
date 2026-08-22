@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { connectStripe } from "@/lib/actions";
+import { connectStripe, setMyRate } from "@/lib/actions";
+import { effectiveRate, sitterPayout } from "@/lib/pricing";
 import { ActionButton } from "@/components/ActionButton";
 import {
   Badge,
@@ -9,6 +10,7 @@ import {
   Card,
   EmptyState,
   PageTitle,
+  buttonClass,
 } from "@/components/ui";
 import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
 import { PublicProfileCard } from "./PublicProfileCard";
@@ -106,9 +108,35 @@ export default async function SitterDashboard() {
             <div>
               <h2 className="font-semibold">You&apos;re vetted</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Your listed rate is {moneyHr(profile.listedPayRate)} (set by
-                Ri&apos;aya). Your original proposal was{" "}
+                Your rate is {moneyHr(effectiveRate(profile))}
+                {profile.baseRate === null
+                  ? " (Ri'aya's starting rate until you set your own)"
+                  : ""}
+                . Your application proposed{" "}
                 {moneyHr(application.targetPayRate)}.
+              </p>
+              {/* Sitters price their own time; confirmed bookings keep the
+                  rate they were quoted at. */}
+              <form action={setMyRate} className="mt-3 flex items-end gap-2">
+                <label className="text-sm font-medium">
+                  Your hourly rate (CAD)
+                  <input
+                    type="number"
+                    name="baseRate"
+                    min={1}
+                    max={500}
+                    required
+                    defaultValue={effectiveRate(profile)}
+                    className="mt-1 w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <button type="submit" className={buttonClass("secondary")}>
+                  Save rate
+                </button>
+              </form>
+              <p className="mt-1 text-xs text-slate-500">
+                Ri&apos;aya&apos;s fee is added on top for the family, so you keep
+                your full rate. Existing bookings keep their agreed price.
               </p>
             </div>
             <Badge color={profile.isListed ? "green" : "amber"}>
@@ -182,6 +210,8 @@ type SitterBooking = {
   isLastMinute: boolean;
   baseAmount: number;
   rushFeeAmount: number;
+  platformFeeAmount: number;
+  totalAmount: number;
   status: keyof typeof BOOKING_STATUS_COLOR;
   parent: { name: string };
 };
@@ -226,7 +256,7 @@ function BookingSection({
                     )}
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
-                    You earn {money(b.baseAmount + b.rushFeeAmount)}
+                    You earn {money(sitterPayout(b))}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
