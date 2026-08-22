@@ -93,6 +93,8 @@ export const bookingSchema = z.object({
 // slot to reference, so the window is entered directly.
 export const bookingRequestSchema = z.object({
   startTime: z.string().min(1, "Choose a date and start time."),
+  // The real floor is BusinessSettings.minBookingHours, enforced in the action;
+  // this is only a sanity bound.
   durationHours: z.coerce
     .number()
     .int()
@@ -137,8 +139,43 @@ export const settingsSchema = z.object({
     .union([z.literal("on"), z.literal("true"), z.literal(""), z.boolean()])
     .optional()
     .transform((v) => v === "on" || v === "true" || v === true),
-  cancellationWindowHours: z.coerce.number().int().min(0).max(336),
-  cancellationChargePercent: z.coerce.number().int().min(0).max(100),
+  minBookingHours: z.coerce.number().int().min(1).max(24),
+  extraChildFeeAmount: z.coerce.number().int().min(0).max(100000),
+  lateNightFeeAmount: z.coerce.number().int().min(0).max(100000),
+  lateNightStartHour: z.coerce.number().int().min(0).max(23),
+  lateNightEndHour: z.coerce.number().int().min(0).max(23),
+  overnightFeeAmount: z.coerce.number().int().min(0).max(100000),
+  overnightStartHour: z.coerce.number().int().min(0).max(23),
+  overnightEndHour: z.coerce.number().int().min(0).max(23),
+  refundFullBeforeHours: z.coerce.number().int().min(0).max(336),
+  lateCancelWindowHours: z.coerce.number().int().min(0).max(336),
+  midRefundPercent: z.coerce.number().int().min(0).max(100),
+  lateRefundPercent: z.coerce.number().int().min(0).max(100),
+  afterStartRefundPercent: z.coerce.number().int().min(0).max(100),
+  sitterCancelRefundPercent: z.coerce.number().int().min(0).max(100),
+});
+
+// A sitter pricing their own time. The Admin-set rate stays as the fallback.
+export const sitterRateSchema = z.object({
+  baseRate: z.coerce
+    .number()
+    .int()
+    .min(1, "Enter an hourly rate.")
+    .max(500, "That rate looks too high — talk to us first."),
+});
+
+// A parent asking the sitter for a short intro call before the session.
+export const interviewRequestSchema = z.object({
+  bookingId: z.string().min(1),
+  proposedAt: z.string().min(1, "Choose a time that suits you."),
+  method: z.enum(["Phone call", "Video call", "In person"]),
+  note: z.string().max(500).optional().or(z.literal("")),
+});
+
+// An Admin broadcast to parents who have newsletter consent on file.
+export const campaignSchema = z.object({
+  subject: z.string().trim().min(3, "Give the email a subject.").max(200),
+  body: z.string().trim().min(20, "Write the message.").max(20000),
 });
 
 // --- Parent KYC ---

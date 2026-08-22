@@ -3,15 +3,18 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import {
   approveBooking,
-  cancelBooking,
+  cancelBookingWithReason,
   completeBooking,
   declineBooking,
   payBooking,
   startBooking,
 } from "@/lib/actions";
 import { getBusinessSettings } from "@/lib/settings";
+import { REFUND_TIER_LABEL, refundPolicyLines } from "@/lib/cancellation";
+import { readBookingMedical } from "@/lib/child-medical";
+import { InterviewCard } from "./InterviewCard";
 import { ActionButton } from "@/components/ActionButton";
-import { Badge, Card, PageTitle } from "@/components/ui";
+import { Badge, Card, PageTitle, buttonClass } from "@/components/ui";
 import { BOOKING_STATUS_COLOR } from "@/lib/status";
 import { bookingRef, dt, money } from "@/lib/format";
 import { Chat } from "./Chat";
@@ -19,6 +22,17 @@ import { ReportForm } from "./ReportForm";
 import { ReviewForm } from "./ReviewForm";
 
 export const dynamic = "force-dynamic";
+
+// Default suggestion for an intro call: ~24h before the session, as a local
+// datetime-local value (the app runs in America/Toronto).
+function interviewSuggestion(start: Date): string {
+  const d = new Date(start.getTime() - 24 * 3600 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
 
 export default async function BookingPage({
   params,
@@ -60,6 +74,12 @@ export default async function BookingPage({
   if (!isParent && !isSitter && !isAdmin) redirect("/");
 
   const messagingOpen = !["CANCELLED", "DECLINED"].includes(booking.status);
+
+  // Health details: the parent who entered them, and the assigned sitter once
+  // the booking is paid. Admins never see them.
+  const medical = await readBookingMedical(booking, user);
+  const medicalWithheldFromSitter =
+    isSitter && !booking.paidAt && booking.status !== "CANCELLED";
 
   // Service address (+ phone) is released to the sitter ONLY once the sitter has
   // approved (addressReleasedAt is set then) — never while REQUESTED, never
@@ -146,13 +166,63 @@ export default async function BookingPage({
         </Card>
       )}
 
+      {medical && medical.length > 0 && (
+        <Card>
+          <h2 className="font-semibold">Health &amp; care needs</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Encrypted; visible only to {booking.parent.name} and{" "}
+            {booking.sitter.name}. Deleted 60 days after the session.
+          </p>
+          <div className="mt-3 space-y-3 text-sm">
+            {medical.map((child) => (
+              <div key={child.childIndex}>
+                <p className="font-medium">
+                  {child.label}
+                  {child.ageYears !== null ? ` · ${child.ageYears}` : ""}
+                </p>
+                {child.allergies && <p>Allergies: {child.allergies}</p>}
+                {child.conditions && <p>Conditions: {child.conditions}</p>}
+                {child.medications && <p>Medications: {child.medications}</p>}
+                {child.specialNeeds && <p>Notes: {child.specialNeeds}</p>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {medicalWithheldFromSitter && (
+        <Card>
+          <p className="text-sm text-slate-600">
+            If this family has shared allergies or medical needs, they are
+            released to you once the booking is paid.
+          </p>
+        </Card>
+      )}
+
+      {(isParent || isSitter) &&
+        !["CANCELLED", "DECLINED"].includes(booking.status) && (
+          <InterviewCard
+            booking={{
+              id: booking.id,
+              interviewStatus: booking.interviewStatus,
+              interviewScheduledAt: booking.interviewScheduledAt,
+              interviewMethod: booking.interviewMethod,
+              interviewNote: booking.interviewNote,
+              parentName: booking.parent.name,
+              sitterName: booking.sitter.name,
+            }}
+            isParent={isParent}
+            isSitter={isSitter}
+            suggestedAt={interviewSuggestion(booking.dateTime)}
+          />
+        )}
+
       {/* Pricing */}
       <Card>
         <h2 className="font-semibold">Pricing</h2>
         <dl className="mt-3 space-y-1.5 text-sm">
           <div className="flex justify-between">
             <span className="text-slate-600">
-              Listed rate {money(booking.listedRateSnapshot)}/hr ×{" "}
+              Sitter&apos;s rate {money(booking.listedRateSnapshot)}/hr ×{" "}
               {booking.durationHours}h
             </span>
             <span>{money(booking.baseAmount)}</span>
@@ -163,15 +233,35 @@ export default async function BookingPage({
               <span>{money(booking.rushFeeAmount)}</span>
             </div>
           )}
+          {booking.extraChildFeeAmount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-slate-600">
+                Extra children ({booking.numberOfChildren} total)
+              </span>
+              <span>{money(booking.extraChildFeeAmount)}</span>
+            </div>
+          )}
+          {booking.lateNightFeeAmount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-slate-600">Late-night fee</span>
+              <span>{money(booking.lateNightFeeAmount)}</span>
+            </div>
+          )}
+          {booking.overnightFeeAmount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-slate-600">Overnight fee</span>
+              <span>{money(booking.overnightFeeAmount)}</span>
+            </div>
+          )}
           <div className="flex justify-between">
-            <span className="text-slate-600">Platform fee</span>
+            <span className="text-slate-600">Ri&apos;aya fee</span>
             <span>{money(booking.platformFeeAmount)}</span>
           </div>
           <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 font-semibold">
             <span>{isSitter ? "You earn" : "Total"}</span>
             <span>
               {isSitter
-                ? money(booking.baseAmount + booking.rushFeeAmount)
+                ? money(booking.totalAmount - booking.platformFeeAmount)
                 : money(booking.totalAmount)}
             </span>
           </div>
@@ -191,13 +281,16 @@ export default async function BookingPage({
           <div className="space-y-2">
             <p className="text-sm text-slate-600">
               You&apos;d earn{" "}
-              <strong>{money(booking.baseAmount + booking.rushFeeAmount)}</strong>{" "}
-              at Ri&apos;aya&apos;s set rate. Approving releases the family&apos;s
-              full address to you.
+              <strong>
+                {money(booking.totalAmount - booking.platformFeeAmount)}
+              </strong>{" "}
+              at your rate. Approving releases the family&apos;s full address to
+              you.
             </p>
             <div className="flex flex-wrap gap-3">
               <ActionButton action={approveBooking.bind(null, booking.id)}>
-                Approve at {money(booking.baseAmount + booking.rushFeeAmount)}
+                Approve at{" "}
+                {money(booking.totalAmount - booking.platformFeeAmount)}
               </ActionButton>
               <ActionButton
                 action={declineBooking.bind(null, booking.id)}
@@ -212,9 +305,17 @@ export default async function BookingPage({
 
         {/* Parent pays after the sitter approves */}
         {isParent && booking.status === "APPROVED" && !booking.paidAt && (
-          <ActionButton action={payBooking.bind(null, booking.id)}>
-            Pay {money(booking.totalAmount)}
-          </ActionButton>
+          <div className="space-y-2">
+            <ActionButton action={payBooking.bind(null, booking.id)}>
+              Pay {money(booking.totalAmount)}
+            </ActionButton>
+            {/* Cancellation terms restated at the point of payment. */}
+            <ul className="list-disc space-y-1 pl-5 text-xs text-slate-500">
+              {refundPolicyLines(settings).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
         )}
         {isParent && booking.status === "REQUESTED" && (
           <p className="text-sm text-slate-600">
@@ -261,13 +362,30 @@ export default async function BookingPage({
 
         {/* Cancel — available until the job completes */}
         {["REQUESTED", "APPROVED", "IN_PROGRESS"].includes(booking.status) && (
-          <ActionButton
-            action={cancelBooking.bind(null, booking.id)}
-            variant="secondary"
-            confirm="Cancel this booking?"
-          >
-            Cancel
-          </ActionButton>
+          <details className="rounded-lg border border-slate-200 p-3">
+            <summary className="cursor-pointer text-sm font-medium">
+              Cancel this booking
+            </summary>
+            <form action={cancelBookingWithReason} className="mt-3 space-y-2">
+              <input type="hidden" name="bookingId" value={booking.id} />
+              <label className="block text-sm font-medium">
+                Reason (optional)
+                <input
+                  name="reason"
+                  maxLength={500}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+              <ul className="list-disc space-y-1 pl-5 text-xs text-slate-600">
+                {refundPolicyLines(settings).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <button type="submit" className={buttonClass("secondary")}>
+                Cancel booking
+              </button>
+            </form>
+          </details>
         )}
 
         {booking.status === "DECLINED" && (
@@ -276,13 +394,25 @@ export default async function BookingPage({
           </p>
         )}
         {booking.status === "CANCELLED" && (
-          <p className="text-sm text-slate-600">
-            Cancelled.
-            {booking.cancellationChargeAmount > 0 &&
-              ` A late-cancellation charge of ${money(
-                booking.cancellationChargeAmount,
-              )} applied.`}
-          </p>
+          <div className="space-y-1 text-sm text-slate-600">
+            <p>
+              Cancelled
+              {booking.cancelledByRole
+                ? ` by the ${booking.cancelledByRole.toLowerCase()}`
+                : ""}
+              {booking.cancelledAt ? ` on ${dt(booking.cancelledAt)}` : ""}
+            </p>
+            {booking.refundTier && booking.refundPercent !== null && (
+              <p>
+                {REFUND_TIER_LABEL[booking.refundTier]} — {booking.refundPercent}
+                % refunded ({money(booking.refundAmount)})
+                {booking.cancellationChargeAmount > 0
+                  ? `, ${money(booking.cancellationChargeAmount)} retained`
+                  : ""}
+                .
+              </p>
+            )}
+          </div>
         )}
         {booking.status === "COMPLETED" && (
           <p className="text-sm text-emerald-700">

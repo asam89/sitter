@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useFormState } from "react-dom";
 import { Card, buttonClass } from "@/components/ui";
+import { ChildMedicalFields } from "@/components/ChildMedicalFields";
 import type { BookingFormState } from "@/lib/actions";
 
 export function BookingForm({
@@ -20,6 +21,7 @@ export function BookingForm({
   termsBody: string;
 }) {
   const [accepted, setAccepted] = useState(false);
+  const [children, setChildren] = useState(1);
   const [state, formAction] = useFormState(action, {});
   const input =
     "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
@@ -47,7 +49,8 @@ export function BookingForm({
               required
               min={1}
               max={10}
-              defaultValue={1}
+              value={children}
+              onChange={(e) => setChildren(Number(e.target.value) || 1)}
               className={input}
             />
           </label>
@@ -57,9 +60,10 @@ export function BookingForm({
           <textarea name="notes" rows={2} className={input} />
         </label>
         <p className="text-xs text-slate-500">
-          We only collect an age range and count — never a child&apos;s name or
-          photo.
+          A name is only needed if you choose to give one below.
         </p>
+
+        <ChildMedicalFields count={children} />
 
         {/* Liability waiver click-through — version + timestamp recorded. */}
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">

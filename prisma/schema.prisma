@@ -43,11 +43,11 @@ enum BookingRequestStatus {
 }
 
 enum BookingStatus {
-  REQUESTED   // parent booked; slot held; awaiting sitter approval
-  APPROVED    // sitter approved at the Admin-set rate; address released; parent pays into escrow
-  DECLINED    // sitter declined; slot returned to OPEN
+  REQUESTED // parent booked; slot held; awaiting sitter approval
+  APPROVED // sitter approved at the Admin-set rate; address released; parent pays into escrow
+  DECLINED // sitter declined; slot returned to OPEN
   IN_PROGRESS // job underway (on/after the scheduled start)
-  COMPLETED   // marked complete; payout released to sitter
+  COMPLETED // marked complete; payout released to sitter
   CANCELLED
 }
 
@@ -75,6 +75,26 @@ enum FeeType {
   PERCENT
 }
 
+// Which rung of the cancellation policy a refund was resolved against. Stored
+// on the booking so a refund can always be explained after the fact.
+enum InterviewStatus {
+  NONE
+  REQUESTED
+  SCHEDULED
+  DECLINED
+  COMPLETED
+}
+
+enum RefundTier {
+  UNPAID // nothing had been charged
+  PARENT_EARLY // parent cancelled outside the full-refund window
+  PARENT_MID // parent cancelled between the two windows
+  PARENT_LATE // parent cancelled inside the late window
+  PARENT_AFTER_START // cancelled at/after the start time
+  SITTER_CANCELLED // sitter backed out
+  ADMIN_CANCELLED // Ri'aya cancelled
+}
+
 enum ReportStatus {
   OPEN
   INVESTIGATING
@@ -86,8 +106,8 @@ enum ReportStatus {
 // minimum level (BusinessSettings.minParentVerificationLevelToBook).
 enum VerificationLevel {
   LEVEL_0_REGISTERED // email + password only; can browse, cannot book
-  LEVEL_1_CONTACT    // email + phone verified
-  LEVEL_2_IDENTITY   // government ID verified + address on file
+  LEVEL_1_CONTACT // email + phone verified
+  LEVEL_2_IDENTITY // government ID verified + address on file
 }
 
 // Channel for a one-time verification code.
@@ -106,13 +126,13 @@ enum IdReviewStatus {
 // ---------- Core ----------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
   name         String
   passwordHash String
-  role         Role     @default(PARENT)
+  role         Role    @default(PARENT)
   phone        String?
-  suspended    Boolean  @default(false)
+  suspended    Boolean @default(false)
 
   // --- KYC / verification ---
   emailVerified     DateTime? // set when the email code is confirmed
@@ -129,38 +149,39 @@ model User {
   newsletterOptOutAt    DateTime?
   unsubscribeToken      String?   @unique
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   parentProfile ParentProfile?
   sitterProfile SitterProfile?
   application   SitterApplication?
 
-  parentBookings      Booking[]           @relation("ParentBookings")
-  sitterBookings      Booking[]           @relation("SitterBookings")
-  bookingRequests     BookingRequest[]    @relation("ParentBookingRequests")
-  requestsClaimed     BookingRequest[]    @relation("SitterClaimedRequests")
-  applicationsReviewed SitterApplication[] @relation("ApplicationReviewer")
-  messages            Message[]
-  reportsMade         Report[]            @relation("Reporter")
-  verificationCodes   VerificationCode[]
-  passwordResetTokens PasswordResetToken[]
-  idDocsReviewed      IdVerificationDocument[] @relation("IdDocReviewer")
-  notifications       Notification[]      @relation("UserNotifications")
-  reviewsWritten      Review[]            @relation("ReviewsWritten")
-  reviewsReceived     Review[]            @relation("ReviewsReceived")
+  parentBookings       Booking[]                @relation("ParentBookings")
+  sitterBookings       Booking[]                @relation("SitterBookings")
+  bookingRequests      BookingRequest[]         @relation("ParentBookingRequests")
+  requestsClaimed      BookingRequest[]         @relation("SitterClaimedRequests")
+  applicationsReviewed SitterApplication[]      @relation("ApplicationReviewer")
+  messages             Message[]
+  reportsMade          Report[]                 @relation("Reporter")
+  verificationCodes    VerificationCode[]
+  passwordResetTokens  PasswordResetToken[]
+  idDocsReviewed       IdVerificationDocument[] @relation("IdDocReviewer")
+  notifications        Notification[]           @relation("UserNotifications")
+  campaigns            EmailCampaign[]          @relation("AdminCampaigns")
+  reviewsWritten       Review[]                 @relation("ReviewsWritten")
+  reviewsReceived      Review[]                 @relation("ReviewsReceived")
 }
 
 // Hashed one-time verification codes for email/phone. The raw code is never
 // stored; only a bcrypt hash. Rows are single-use (consumedAt) and expiring.
 model VerificationCode {
-  id        String              @id @default(cuid())
-  userId    String
-  channel   VerificationChannel
-  codeHash  String
-  expiresAt DateTime
+  id         String              @id @default(cuid())
+  userId     String
+  channel    VerificationChannel
+  codeHash   String
+  expiresAt  DateTime
   consumedAt DateTime?
-  createdAt DateTime            @default(now())
+  createdAt  DateTime            @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -183,10 +204,10 @@ model PasswordResetToken {
 }
 
 model ParentProfile {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  address   String? // legacy free-text; retained for existing data
-  city      String?
+  id      String  @id @default(cuid())
+  userId  String  @unique
+  address String? // legacy free-text; retained for existing data
+  city    String?
 
   // --- Service address (released to a sitter only on booking confirmation) ---
   streetAddress String?
@@ -195,10 +216,10 @@ model ParentProfile {
   province      String?
 
   // --- Identity verification ---
-  identityVerified      Boolean   @default(false)
-  verifiedName          String? // name as confirmed by ID review/provider
+  identityVerified       Boolean   @default(false)
+  verifiedName           String? // name as confirmed by ID review/provider
   idVerificationProvider String? // e.g. "manual", "stripe_identity"
-  idVerifiedAt          DateTime?
+  idVerifiedAt           DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -211,14 +232,14 @@ model ParentProfile {
 // at a PRIVATE bucket/dir — never a public URL. The raw document is deleted
 // (deletedAt set, storagePath cleared) once verification passes.
 model IdVerificationDocument {
-  id              String         @id @default(cuid())
-  parentProfileId String
-  storagePath     String? // private path; cleared on deletion
-  reviewStatus    IdReviewStatus @default(PENDING)
+  id                String         @id @default(cuid())
+  parentProfileId   String
+  storagePath       String? // private path; cleared on deletion
+  reviewStatus      IdReviewStatus @default(PENDING)
   reviewedByAdminId String?
-  reviewedAt      DateTime?
-  deletedAt       DateTime?
-  createdAt       DateTime       @default(now())
+  reviewedAt        DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime       @default(now())
 
   parentProfile ParentProfile @relation(fields: [parentProfileId], references: [id], onDelete: Cascade)
   reviewedBy    User?         @relation("IdDocReviewer", fields: [reviewedByAdminId], references: [id])
@@ -231,25 +252,25 @@ model IdVerificationDocument {
 // proposal. It is stored here permanently and is NEVER overwritten by the
 // Admin-set listed rate (which lives on SitterProfile.listedPayRate).
 model SitterApplication {
-  id                String            @id @default(cuid())
-  userId            String            @unique
-  bio               String
-  experience        String
-  certifications    String[] // free-text labels, e.g. "CPR", "First Aid"
-  documentUrls      String[] // uploaded doc URLs (CPR cert, police check, etc.)
-  targetPayRate     Int // sitter's requested hourly rate (whole CAD)
-  status            ApplicationStatus @default(APPLIED)
-  reviewedByAdminId String?
-  reviewedAt        DateTime?
-  adminNotes        String?
+  id                   String            @id @default(cuid())
+  userId               String            @unique
+  bio                  String
+  experience           String
+  certifications       String[] // free-text labels, e.g. "CPR", "First Aid"
+  documentUrls         String[] // uploaded doc URLs (CPR cert, police check, etc.)
+  targetPayRate        Int // sitter's requested hourly rate (whole CAD)
+  status               ApplicationStatus @default(APPLIED)
+  reviewedByAdminId    String?
+  reviewedAt           DateTime?
+  adminNotes           String?
   // Interview stage: an applicant enters INTERVIEW when the Admin team wants to
   // meet them before vetting. interviewScheduledAt is optional (set only if the
   // team books a specific time the applicant can see); interviewNotes are the
   // internal write-up the reviewers record before deciding.
   interviewScheduledAt DateTime?
   interviewNotes       String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewedBy User? @relation("ApplicationReviewer", fields: [reviewedByAdminId], references: [id])
@@ -266,6 +287,9 @@ model SitterProfile {
   bio             String?
   city            String?
   listedPayRate   Int // Admin-set hourly rate (whole CAD) — distinct from targetPayRate
+  // Sitter-set hourly rate. Sitters price their own time; listedPayRate is the
+  // Admin-set fallback used until a sitter sets one. See effectiveRate().
+  baseRate        Int?
   isListed        Boolean  @default(false)
   // Public profile photo (opaque filename in public storage; not a public URL).
   // Served through /api/sitter/[id]/photo. Null = show initials avatar instead.
@@ -288,15 +312,15 @@ model SitterProfile {
 }
 
 model AvailabilitySlot {
-  id              String     @id @default(cuid())
-  sitterProfileId String
-  startTime       DateTime
-  endTime         DateTime
-  status          SlotStatus @default(OPEN)
+  id                   String     @id @default(cuid())
+  sitterProfileId      String
+  startTime            DateTime
+  endTime              DateTime
+  status               SlotStatus @default(OPEN)
   // Sitter opts a slot in for last-minute work; a booking inside the
   // configurable lead-time threshold still flags last-minute + adds the rush fee.
-  isLastMinuteEligible Boolean @default(false)
-  createdAt       DateTime   @default(now())
+  isLastMinuteEligible Boolean    @default(false)
+  createdAt            DateTime   @default(now())
 
   sitterProfile SitterProfile @relation(fields: [sitterProfileId], references: [id], onDelete: Cascade)
   booking       Booking?
@@ -306,55 +330,79 @@ model AvailabilitySlot {
 }
 
 model Booking {
-  id                 String    @id @default(cuid())
+  id                 String   @id @default(cuid())
   // Short, human-quotable reference (rendered as RB-000123) for support and
   // admin lookup — the cuid stays the internal/URL identifier.
-  bookingNumber      Int       @unique @default(autoincrement())
+  bookingNumber      Int      @unique @default(autoincrement())
   parentId           String
   sitterId           String
-  availabilitySlotId String    @unique
+  availabilitySlotId String   @unique
   dateTime           DateTime
   durationHours      Int
   childrenAgeRange   String // e.g. "2-5" — no names/photos (data minimization)
-  numberOfChildren   Int       @default(1)
+  numberOfChildren   Int      @default(1)
   notes              String?
 
   // Pricing snapshot (taken at booking time so later settings changes don't
-  // retroactively alter a confirmed booking).
-  listedRateSnapshot Int
-  baseAmount         Int // listedRate * durationHours
-  isLastMinute       Boolean @default(false)
-  rushFeeAmount      Int     @default(0) // computed, disclosed as its own line item
-  platformFeeAmount  Int     @default(0)
-  totalAmount        Int // what the parent is charged
+  // retroactively alter a confirmed booking). Every surcharge is stored as its
+  // own line item because the parent is shown an itemised total before paying.
+  listedRateSnapshot  Int
+  baseAmount          Int // listedRate * durationHours
+  isLastMinute        Boolean @default(false)
+  rushFeeAmount       Int     @default(0) // computed, disclosed as its own line item
+  extraChildFeeAmount Int     @default(0) // per additional child beyond the first
+  lateNightFeeAmount  Int     @default(0) // session overlaps the late-night window
+  overnightFeeAmount  Int     @default(0) // session overlaps the overnight window
+  platformFeeAmount   Int     @default(0)
+  totalAmount         Int // what the parent is charged
 
-  // Waiver acceptance record (version + timestamp).
-  waiverVersion    String
-  waiverAcceptedAt DateTime
+  // Waiver acceptance record. IP and user-agent are kept alongside the version
+  // and timestamp so an acceptance can be evidenced later.
+  waiverVersion           String
+  waiverAcceptedAt        DateTime
+  waiverAcceptedIp        String?
+  waiverAcceptedUserAgent String?
 
-  status                BookingStatus @default(REQUESTED)
-  stripePaymentIntentId String?
-  approvedAt            DateTime?
-  declinedAt            DateTime?
-  addressReleasedAt     DateTime? // set when the sitter approves and the address unlocks
-  paidAt                DateTime?
-  startedAt             DateTime? // set when moved to IN_PROGRESS
-  completedAt           DateTime?
-  payoutReleasedAt      DateTime?
-  cancelledAt           DateTime?
-  cancellationChargeAmount Int @default(0) // partial charge applied on late cancellation
+  status                   BookingStatus   @default(REQUESTED)
+  stripePaymentIntentId    String?
+  approvedAt               DateTime?
+  declinedAt               DateTime?
+  addressReleasedAt        DateTime? // set when the sitter approves and the address unlocks
+  paidAt                   DateTime?
+  startedAt                DateTime? // set when moved to IN_PROGRESS
+  completedAt              DateTime?
+  payoutReleasedAt         DateTime?
+  cancelledAt              DateTime?
+  cancellationChargeAmount Int             @default(0) // amount the parent forfeits (total - refund)
+  // Refund outcome, resolved by the tiered policy at cancellation time.
+  refundAmount             Int             @default(0)
+  refundPercent            Int?
+  refundTier               RefundTier?
+  cancelledByUserId        String?
+  cancelledByRole          Role?
+  cancellationReason       String?
+  // Optional parent/sitter intro call before the session. Never blocks the
+  // booking: it is a comfort step, not a gate.
+  interviewStatus          InterviewStatus @default(NONE)
+  interviewRequestedAt     DateTime?
+  interviewScheduledAt     DateTime?
+  interviewMethod          String? // "Phone call", "Video call", "In person"
+  interviewNote            String?
+  refundProcessorId        String? // Stripe refund id, null for mock payments
+  refundProcessorStatus    String? // "mock" when no real charge existed
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  parent          User             @relation("ParentBookings", fields: [parentId], references: [id])
-  sitter          User             @relation("SitterBookings", fields: [sitterId], references: [id])
-  availabilitySlot AvailabilitySlot @relation(fields: [availabilitySlotId], references: [id])
-  messages        Message[]
-  reports         Report[]
-  notifications   Notification[]
-  reviews         Review[]
-  openRequest     BookingRequest?
+  parent           User                 @relation("ParentBookings", fields: [parentId], references: [id])
+  sitter           User                 @relation("SitterBookings", fields: [sitterId], references: [id])
+  availabilitySlot AvailabilitySlot     @relation(fields: [availabilitySlotId], references: [id])
+  messages         Message[]
+  reports          Report[]
+  notifications    Notification[]
+  childMedical     ChildMedicalRecord[]
+  reviews          Review[]
+  openRequest      BookingRequest?
 
   @@index([status])
   @@index([parentId])
@@ -370,41 +418,85 @@ model Booking {
 // sitter picks the request up, so pricing is computed at claim time from that
 // sitter's Admin-set listedPayRate.
 model BookingRequest {
-  id               String               @id @default(cuid())
-  requestNumber    Int                  @unique @default(autoincrement())
-  parentId         String
-  startTime        DateTime
-  durationHours    Int
-  childrenAgeRange String
-  numberOfChildren Int                  @default(1)
-  notes            String?
-  waiverVersion    String
-  waiverAcceptedAt DateTime
-  status           BookingRequestStatus @default(OPEN)
-  claimedById      String? // sitter who picked it up
-  claimedAt        DateTime?
-  bookingId        String?              @unique // the Booking created on claim
-  cancelledAt      DateTime?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  id                      String               @id @default(cuid())
+  requestNumber           Int                  @unique @default(autoincrement())
+  parentId                String
+  startTime               DateTime
+  durationHours           Int
+  childrenAgeRange        String
+  numberOfChildren        Int                  @default(1)
+  notes                   String?
+  waiverVersion           String
+  waiverAcceptedAt        DateTime
+  waiverAcceptedIp        String?
+  waiverAcceptedUserAgent String?
+  status                  BookingRequestStatus @default(OPEN)
+  claimedById             String? // sitter who picked it up
+  claimedAt               DateTime?
+  bookingId               String?              @unique // the Booking created on claim
+  cancelledAt             DateTime?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
-  parent    User     @relation("ParentBookingRequests", fields: [parentId], references: [id], onDelete: Cascade)
-  claimedBy User?    @relation("SitterClaimedRequests", fields: [claimedById], references: [id])
-  booking   Booking? @relation(fields: [bookingId], references: [id])
+  parent       User                 @relation("ParentBookingRequests", fields: [parentId], references: [id], onDelete: Cascade)
+  claimedBy    User?                @relation("SitterClaimedRequests", fields: [claimedById], references: [id])
+  booking      Booking?             @relation(fields: [bookingId], references: [id])
+  childMedical ChildMedicalRecord[]
 
   @@index([status, startTime])
   @@index([parentId])
 }
 
+// Per-child health information, encrypted at rest (AES-256-GCM in
+// src/lib/child-medical.ts). Only the parent who entered it and the assigned
+// sitter (after payment) can decrypt it; rows are purged after purgeAfter.
+// PENDING PRIVACY REVIEW before production use.
+model ChildMedicalRecord {
+  id               String   @id @default(cuid())
+  bookingId        String?
+  bookingRequestId String?
+  childIndex       Int
+  label            String
+  ageYears         Int?
+  encrypted        String // iv.ciphertext.tag, base64url
+  purgeAfter       DateTime
+  createdAt        DateTime @default(now())
+
+  booking        Booking?        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingRequest BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([bookingRequestId])
+  @@index([purgeAfter])
+}
+
+// One Admin email broadcast to parents. Only parents with express newsletter
+// consent on file receive it (CASL), and the send is recorded so it is
+// auditable after the fact.
+model EmailCampaign {
+  id              String   @id @default(cuid())
+  subject         String
+  body            String
+  sentByUserId    String
+  recipientCount  Int      @default(0)
+  failureCount    Int      @default(0)
+  suppressedCount Int      @default(0)
+  sentAt          DateTime @default(now())
+
+  sentBy User @relation("AdminCampaigns", fields: [sentByUserId], references: [id])
+
+  @@index([sentAt])
+}
+
 // Audit row for each booking notification dispatch attempt (per recipient/channel).
 model Notification {
-  id              String             @id @default(cuid())
+  id              String              @id @default(cuid())
   bookingId       String
   recipientUserId String
   channel         NotificationChannel
-  status          NotificationStatus @default(SENT)
+  status          NotificationStatus  @default(SENT)
   detail          String? // e.g. provider name, or stub note
-  sentAt          DateTime           @default(now())
+  sentAt          DateTime            @default(now())
 
   booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   recipient User    @relation("UserNotifications", fields: [recipientUserId], references: [id])
@@ -416,13 +508,13 @@ model Notification {
 // Two-way review, unlocked only after a booking is COMPLETED. Each participant
 // (parent or sitter) may leave exactly one review per booking.
 model Review {
-  id         String   @id @default(cuid())
-  bookingId  String
-  authorId   String
-  subjectId  String // the user being reviewed
-  rating     Int // 1..5
-  comment    String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  bookingId String
+  authorId  String
+  subjectId String // the user being reviewed
+  rating    Int // 1..5
+  comment   String?
+  createdAt DateTime @default(now())
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   author  User    @relation("ReviewsWritten", fields: [authorId], references: [id])
@@ -490,12 +582,33 @@ model BusinessSettings {
   completionConfirmedBy CompletionConfirmer @default(PARENT)
   // Notification channels beyond email (always on). Toggle on once a provider
   // (e.g. Twilio) is configured; stubbed/logged until then.
-  notifySmsEnabled      Boolean @default(false)
-  notifyWhatsappEnabled Boolean @default(false)
-  // Cancellation policy: a cancellation by the parent within this many hours of
-  // the start incurs a partial charge (percent of base). Default 0% = no penalty.
-  cancellationWindowHours   Int @default(24)
-  cancellationChargePercent Int @default(0)
+  notifySmsEnabled      Boolean             @default(false)
+  notifyWhatsappEnabled Boolean             @default(false)
+  // --- Booking rules ---
+  // Shortest bookable session. Requests and slots below this are rejected.
+  minBookingHours       Int                 @default(2)
 
-  updatedAt                DateTime @updatedAt
+  // --- Surcharges (flat CAD; each is charged once when the session overlaps) ---
+  extraChildFeeAmount Int @default(0) // per additional child beyond the first
+  lateNightFeeAmount  Int @default(0)
+  lateNightStartHour  Int @default(22) // window wraps midnight: [start, end)
+  lateNightEndHour    Int @default(6)
+  overnightFeeAmount  Int @default(0)
+  overnightStartHour  Int @default(0)
+  overnightEndHour    Int @default(6)
+
+  // --- Cancellation / refund policy ---
+  // Parent cancels at least this many hours before the start → full refund.
+  refundFullBeforeHours     Int @default(24)
+  // Parent cancels inside this many hours of the start → lateRefundPercent.
+  lateCancelWindowHours     Int @default(2)
+  // Between the two windows (e.g. 2–24h out).
+  midRefundPercent          Int @default(100)
+  lateRefundPercent         Int @default(50)
+  // At or after the start time (includes no-shows).
+  afterStartRefundPercent   Int @default(0)
+  // A sitter (or Ri'aya) backing out never costs the parent anything.
+  sitterCancelRefundPercent Int @default(100)
+
+  updatedAt DateTime @updatedAt
 }

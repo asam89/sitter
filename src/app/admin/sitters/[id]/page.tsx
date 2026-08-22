@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { effectiveRate } from "@/lib/pricing";
 import { requireRole } from "@/lib/session";
 import { adminAddSlot, adminDeleteSlot, adminEditSlot } from "@/lib/actions";
 import { AvailabilityWeek, type SlotView } from "@/components/AvailabilityWeek";
@@ -69,7 +70,7 @@ export default async function AdminSitterAvailability({
     <div className="mx-auto max-w-6xl space-y-4">
       <PageTitle
         title={`${sp.user.name} — hours`}
-        subtitle={`Listed rate ${moneyHr(sp.listedPayRate)} · ${
+        subtitle={`Rate ${moneyHr(effectiveRate(sp))} · ${
           sp.isListed ? "listed" : "unlisted"
         } · this week: ${openHours}h open, ${bookedHours}h booked`}
       />
