@@ -412,6 +412,9 @@ export default async function BookingPage({
                 .
               </p>
             )}
+            {booking.cancellationReason && (
+              <p>Reason given: &ldquo;{booking.cancellationReason}&rdquo;</p>
+            )}
           </div>
         )}
         {booking.status === "COMPLETED" && (

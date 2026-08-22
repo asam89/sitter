@@ -36,7 +36,8 @@ export async function requestInterview(fd: FormData) {
     bookingId: fd.get("bookingId"),
     proposedAt: fd.get("proposedAt"),
     method: fd.get("method"),
-    note: fd.get("note"),
+    // Coerce: the retry form has no note field, and a missing field reads null.
+    note: fd.get("note") ?? "",
   });
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? "Invalid request");
