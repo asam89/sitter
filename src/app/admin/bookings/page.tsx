@@ -209,6 +209,9 @@ export default async function AdminBookingsCalendar({
                     <Badge color={BOOKING_STATUS_COLOR[b.status]}>
                       {b.status}
                     </Badge>
+                    {b.paidAt && b.status !== "CANCELLED" && (
+                      <Badge color="green">PAID</Badge>
+                    )}
                     <Link
                       href={`/bookings/${b.id}`}
                       className="text-sm font-medium text-brand-coral"

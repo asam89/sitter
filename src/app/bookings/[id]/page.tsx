@@ -331,7 +331,7 @@ export default async function BookingPage({
             <div className="space-y-2">
               <p className="text-sm text-emerald-700">
                 Paid and confirmed — {booking.sitter.name} is booked for{" "}
-                {dt(booking.dateTime)}.
+                {dt(booking.dateTime)}
               </p>
               <ActionButton action={startBooking.bind(null, booking.id)}>
                 Mark job started
