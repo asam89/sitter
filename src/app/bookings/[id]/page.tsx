@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import {
+  adminMarkBookingPaid,
   approveBooking,
   cancelBookingWithReason,
   completeBooking,
@@ -10,9 +11,11 @@ import {
   startBooking,
 } from "@/lib/actions";
 import { getBusinessSettings } from "@/lib/settings";
+import { getActiveTerms } from "@/lib/terms";
 import { REFUND_TIER_LABEL, refundPolicyLines } from "@/lib/cancellation";
 import { readBookingMedical } from "@/lib/child-medical";
 import { InterviewCard } from "./InterviewCard";
+import { PaymentChoice } from "./PaymentChoice";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, Card, PageTitle, buttonClass } from "@/components/ui";
 import { BOOKING_STATUS_COLOR } from "@/lib/status";
@@ -66,7 +69,10 @@ export default async function BookingPage({
   });
   if (!booking) notFound();
 
-  const settings = await getBusinessSettings();
+  const [settings, terms] = await Promise.all([
+    getBusinessSettings(),
+    getActiveTerms(),
+  ]);
 
   const isParent = booking.parentId === user.id;
   const isSitter = booking.sitterId === user.id;
@@ -142,8 +148,21 @@ export default async function BookingPage({
           )}
           <dt className="text-slate-500">Waiver</dt>
           <dd>
-            {booking.waiverVersion} accepted {dt(booking.waiverAcceptedAt)}
+            {booking.waiverAcceptedAt
+              ? `${booking.waiverVersion} accepted ${dt(booking.waiverAcceptedAt)}`
+              : `${booking.waiverVersion} — not yet accepted`}
           </dd>
+          {booking.paymentMethod && (
+            <>
+              <dt className="text-slate-500">Payment</dt>
+              <dd>
+                {booking.paymentMethod === "CARD"
+                  ? "Credit card"
+                  : "Interac e-Transfer"}
+                {booking.paidAt ? "" : " — awaiting funds"}
+              </dd>
+            </>
+          )}
         </dl>
       </Card>
 
@@ -306,9 +325,23 @@ export default async function BookingPage({
         {/* Parent pays after the sitter approves */}
         {isParent && booking.status === "APPROVED" && !booking.paidAt && (
           <div className="space-y-2">
-            <ActionButton action={payBooking.bind(null, booking.id)}>
-              Pay {money(booking.totalAmount)}
-            </ActionButton>
+            <PaymentChoice
+              action={payBooking}
+              bookingId={booking.id}
+              amount={money(booking.totalAmount)}
+              etransferEmail={settings.etransferEmail}
+              bookingRef={bookingRef(booking.bookingNumber)}
+              termsVersion={booking.waiverVersion}
+              termsBody={terms.body}
+              waiverOutstanding={!booking.waiverAcceptedAt}
+            />
+            {booking.paymentMethod === "ETRANSFER" && (
+              <p className="text-sm text-amber-800">
+                Waiting on your e-Transfer of {money(booking.totalAmount)} to{" "}
+                {settings.etransferEmail}. We&apos;ll confirm the booking as soon
+                as it arrives.
+              </p>
+            )}
             {/* Cancellation terms restated at the point of payment. */}
             <ul className="list-disc space-y-1 pl-5 text-xs text-slate-500">
               {refundPolicyLines(settings).map((line) => (
@@ -319,9 +352,34 @@ export default async function BookingPage({
         )}
         {isParent && booking.status === "REQUESTED" && (
           <p className="text-sm text-slate-600">
-            Waiting for {booking.sitter.name} to approve. You&apos;ll pay once
-            they do.
+            {booking.createdByAdminId
+              ? `We set this booking up for you. ${booking.sitter.name} is confirming it — you'll accept the waiver and pay once they do.`
+              : `Waiting for ${booking.sitter.name} to approve. You'll pay once they do.`}
           </p>
+        )}
+
+        {/* Admin records an offline payment (e-Transfer or cash) */}
+        {isAdmin && booking.status === "APPROVED" && !booking.paidAt && (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-600">
+              {booking.paymentMethod === "ETRANSFER"
+                ? `The parent chose to pay ${money(booking.totalAmount)} by e-Transfer.`
+                : `Awaiting payment of ${money(booking.totalAmount)} from the parent.`}
+            </p>
+            {booking.waiverAcceptedAt ? (
+              <ActionButton
+                action={adminMarkBookingPaid.bind(null, booking.id)}
+                confirm="Mark this booking paid? Only do this once the money has actually arrived."
+              >
+                Mark paid ({money(booking.totalAmount)} received)
+              </ActionButton>
+            ) : (
+              <p className="text-sm text-amber-800">
+                The parent still has to accept the waiver before this booking can
+                be marked paid.
+              </p>
+            )}
+          </div>
         )}
 
         {/* Start the job (approved + paid) */}

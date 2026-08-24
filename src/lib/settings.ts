@@ -70,6 +70,7 @@ export type BusinessSettingsInput = {
   lateRefundPercent: number;
   afterStartRefundPercent: number;
   sitterCancelRefundPercent: number;
+  etransferEmail: string | null;
 };
 
 export async function updateBusinessSettings(

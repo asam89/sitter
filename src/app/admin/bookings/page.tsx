@@ -94,6 +94,12 @@ export default async function AdminBookingsCalendar({
         />
         <div className="flex items-center gap-2">
           <Link
+            href="/admin/bookings/new"
+            className="rounded-lg bg-brand-coral px-3 py-2 text-sm font-semibold text-white hover:bg-brand-coral/90"
+          >
+            New booking
+          </Link>
+          <Link
             href={`/admin/bookings?month=${monthParam(prev)}`}
             className="rounded-lg border border-brand-teal/30 bg-white px-3 py-2 text-sm font-semibold text-brand-teal hover:bg-brand-cream"
           >

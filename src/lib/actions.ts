@@ -33,8 +33,9 @@ import {
   notifyAdminsOfOpenRequest,
 } from "@/lib/admin-notifications";
 import { notifyListedSittersOfRequest } from "@/lib/request-notifications";
-import type { BusinessSettings } from "@prisma/client";
+import { Prisma, type BusinessSettings } from "@prisma/client";
 import {
+  adminBookingSchema,
   applicationSchema,
   bookingRequestSchema,
   bookingSchema,
@@ -486,9 +487,14 @@ export async function updateSettings(fd: FormData) {
     lateRefundPercent: s(fd, "lateRefundPercent"),
     afterStartRefundPercent: s(fd, "afterStartRefundPercent"),
     sitterCancelRefundPercent: s(fd, "sitterCancelRefundPercent"),
+    etransferEmail: s(fd, "etransferEmail"),
   });
   if (!parsed.success) throw new Error("Invalid settings");
-  await updateBusinessSettings(parsed.data);
+  const { etransferEmail, ...rest } = parsed.data;
+  await updateBusinessSettings({
+    ...rest,
+    etransferEmail: etransferEmail || null,
+  });
   revalidatePath("/admin/settings");
 }
 
@@ -639,6 +645,133 @@ export async function createBooking(
     isLastMinute: booking.isLastMinute,
   });
 
+  redirect(`/bookings/${booking.id}`);
+}
+
+// ---------- Admin: manual booking on a parent's behalf ----------
+
+// Admin enters a booking for a parent who called/messaged instead of using the
+// app. It follows the normal lifecycle from here: the sitter still confirms, the
+// parent still accepts the waiver and pays, and the window becomes a BOOKED
+// block so it shows on the calendar and hours grid like any other booking.
+export async function adminCreateBooking(
+  _prevState: BookingFormState,
+  fd: FormData,
+): Promise<BookingFormState> {
+  const admin = await requireRole("ADMIN");
+  const parsed = adminBookingSchema.safeParse({
+    parentId: s(fd, "parentId"),
+    sitterProfileId: s(fd, "sitterProfileId"),
+    startTime: s(fd, "startTime"),
+    durationHours: s(fd, "durationHours"),
+    childrenAgeRange: s(fd, "childrenAgeRange"),
+    numberOfChildren: s(fd, "numberOfChildren"),
+    notes: s(fd, "notes"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid booking input" };
+  }
+  const d = parsed.data;
+  const start = new Date(d.startTime);
+  if (Number.isNaN(start.getTime())) {
+    return { error: "That date and time isn't valid." };
+  }
+  const end = new Date(start.getTime() + d.durationHours * 3600 * 1000);
+
+  const settings = await getBusinessSettings();
+  if (d.durationHours < settings.minBookingHours) {
+    return {
+      error: `Bookings are a minimum of ${settings.minBookingHours} hours.`,
+    };
+  }
+
+  const [parent, profile] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: d.parentId },
+      select: { role: true, suspended: true },
+    }),
+    prisma.sitterProfile.findUnique({
+      where: { id: d.sitterProfileId },
+      include: { user: { select: { suspended: true } } },
+    }),
+  ]);
+  if (!parent || parent.role !== "PARENT" || parent.suspended) {
+    return { error: "That parent account can't be booked for." };
+  }
+  if (!profile || !profile.isListed || profile.user.suspended) {
+    return { error: "That sitter isn't currently bookable." };
+  }
+  const conflict = await prisma.availabilitySlot.findFirst({
+    where: {
+      sitterProfileId: profile.id,
+      startTime: { lt: end },
+      endTime: { gt: start },
+    },
+  });
+  if (conflict) {
+    return { error: "That window overlaps an existing block for this sitter." };
+  }
+
+  const terms = await getActiveTerms();
+  const lastMinute = isLastMinute(start, settings.lastMinuteThresholdHours);
+  const price = computePrice(
+    effectiveRate(profile),
+    d.durationHours,
+    lastMinute,
+    settings,
+    start,
+    d.numberOfChildren,
+  );
+
+  const slot = await prisma.availabilitySlot.create({
+    data: {
+      sitterProfileId: profile.id,
+      startTime: start,
+      endTime: end,
+      status: "BOOKED",
+      isLastMinuteEligible: lastMinute,
+    },
+  });
+  const booking = await prisma.booking.create({
+    data: {
+      parentId: d.parentId,
+      sitterId: profile.userId,
+      availabilitySlotId: slot.id,
+      dateTime: start,
+      durationHours: d.durationHours,
+      childrenAgeRange: d.childrenAgeRange,
+      numberOfChildren: d.numberOfChildren,
+      notes: d.notes || null,
+      listedRateSnapshot: price.listedRate,
+      baseAmount: price.base,
+      isLastMinute: lastMinute,
+      rushFeeAmount: price.rushFee,
+      extraChildFeeAmount: price.extraChildFee,
+      lateNightFeeAmount: price.lateNightFee,
+      overnightFeeAmount: price.overnightFee,
+      platformFeeAmount: price.platformFee,
+      totalAmount: price.total,
+      // Version pinned now; the parent's own acceptance is recorded at payment.
+      waiverVersion: terms.version,
+      createdByAdminId: admin.id,
+      status: "REQUESTED",
+    },
+    include: notifyInclude,
+  });
+
+  await notify("REQUESTED", ["SITTER", "PARENT"], booking, settings);
+  await notifyAdminsOfBooking({
+    id: booking.id,
+    bookingNumber: booking.bookingNumber,
+    parentName: booking.parent.name,
+    sitterName: booking.sitter.name,
+    when: booking.dateTime,
+    durationHours: booking.durationHours,
+    totalAmount: booking.totalAmount,
+    isLastMinute: booking.isLastMinute,
+  });
+
+  revalidatePath("/admin/bookings");
   redirect(`/bookings/${booking.id}`);
 }
 
@@ -967,18 +1100,50 @@ export async function declineBooking(bookingId: string) {
 
 // ---------- Parent: payment (escrow) ----------
 
+export type PaymentFormState = { error?: string };
+
 // Payment happens after the sitter approves, so a parent is never charged for a
-// booking the sitter might decline. Funds are held until completion.
-export async function payBooking(bookingId: string) {
+// booking the sitter might decline. A card payment settles here and holds the
+// funds until completion; an e-transfer settles outside the app, so the booking
+// only records the choice and waits for an Admin to confirm the money arrived.
+export async function payBooking(
+  _prevState: PaymentFormState,
+  fd: FormData,
+): Promise<PaymentFormState> {
   const user = await requireRole("PARENT");
+  const bookingId = s(fd, "bookingId");
+  const method = s(fd, "method") === "ETRANSFER" ? "ETRANSFER" : "CARD";
   const booking = await prisma.booking.findUniqueOrThrow({
     where: { id: bookingId },
   });
   if (booking.parentId !== user.id) throw new Error("Not your booking");
   if (booking.status !== "APPROVED") {
-    throw new Error("Booking must be approved by the sitter before payment.");
+    return { error: "The sitter has to approve the booking before payment." };
   }
-  if (booking.paidAt) throw new Error("Booking is already paid.");
+  if (booking.paidAt) return { error: "This booking is already paid." };
+
+  // An Admin-entered booking carries no waiver acceptance yet; the parent gives
+  // it here, before any money moves.
+  const waiver: Prisma.BookingUpdateInput = {};
+  if (!booking.waiverAcceptedAt) {
+    if (s(fd, "waiverAccepted") !== "on") {
+      return { error: "You must accept the waiver and terms to pay." };
+    }
+    const acceptance = waiverAcceptanceContext();
+    waiver.waiverAcceptedAt = new Date();
+    waiver.waiverAcceptedIp = acceptance.ip;
+    waiver.waiverAcceptedUserAgent = acceptance.userAgent;
+  }
+
+  if (method === "ETRANSFER") {
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: { ...waiver, paymentMethod: "ETRANSFER" },
+    });
+    revalidatePath(`/bookings/${bookingId}`);
+    revalidatePath("/admin/bookings");
+    return {};
+  }
 
   let paymentIntentId: string | null = null;
   if (stripeEnabled && stripe) {
@@ -994,9 +1159,45 @@ export async function payBooking(bookingId: string) {
   }
   await prisma.booking.update({
     where: { id: bookingId },
-    data: { paidAt: new Date(), stripePaymentIntentId: paymentIntentId },
+    data: {
+      ...waiver,
+      paidAt: new Date(),
+      paymentMethod: "CARD",
+      stripePaymentIntentId: paymentIntentId,
+    },
   });
   revalidatePath(`/bookings/${bookingId}`);
+  return {};
+}
+
+// Admin records a payment that arrived outside the app (e-transfer or cash).
+// This is the only way an e-transfer booking becomes paid, so who confirmed it
+// is stored on the booking.
+export async function adminMarkBookingPaid(bookingId: string) {
+  const admin = await requireRole("ADMIN");
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+  });
+  if (booking.paidAt) throw new Error("Booking is already paid.");
+  if (booking.status !== "APPROVED") {
+    throw new Error("The sitter has to approve the booking before payment.");
+  }
+  if (!booking.waiverAcceptedAt) {
+    throw new Error(
+      "The parent has to accept the waiver before the booking can be paid.",
+    );
+  }
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      paidAt: new Date(),
+      paymentMethod: booking.paymentMethod ?? "ETRANSFER",
+      paidRecordedById: admin.id,
+    },
+  });
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/admin/bookings");
+  revalidatePath("/admin");
 }
 
 // ---------- Completion lifecycle ----------

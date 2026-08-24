@@ -319,6 +319,25 @@ export default async function AdminSettingsPage() {
           </fieldset>
 
           <fieldset className="rounded-lg border border-slate-200 p-3">
+            <legend className="px-1 text-sm font-semibold">Payments</legend>
+            <label className="block text-sm font-medium">
+              Interac e-Transfer address
+              <input
+                type="email"
+                name="etransferEmail"
+                defaultValue={s.etransferEmail ?? ""}
+                placeholder="payments@riaya.ca"
+                className={input}
+              />
+            </label>
+            <p className="mt-2 text-xs text-slate-500">
+              Shown to parents who choose to pay by e-Transfer. Leave blank to
+              offer card payment only. An e-Transfer booking is confirmed only
+              once an Admin marks it paid.
+            </p>
+          </fieldset>
+
+          <fieldset className="rounded-lg border border-slate-200 p-3">
             <legend className="px-1 text-sm font-semibold">
               Sitter notification channels
             </legend>
