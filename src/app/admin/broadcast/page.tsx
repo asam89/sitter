@@ -46,6 +46,7 @@ export default async function AdminBroadcastPage() {
           REGISTERED: campaignFooter(null, "REGISTERED"),
         }}
         newsletterCount={audience.newsletter}
+        subscriberCount={audience.subscribers}
         registeredCount={audience.registered}
         parentCount={audience.parents}
         impliedMonths={IMPLIED_CONSENT_MONTHS}

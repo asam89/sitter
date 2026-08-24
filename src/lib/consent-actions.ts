@@ -10,10 +10,16 @@ import { prisma } from "@/lib/prisma";
 // This also has to work for someone who never ticked the newsletter box, since
 // they can still be emailed under implied consent — recording newsletterOptOutAt
 // is what removes them from every audience.
+// A token belongs either to an account or to a public newsletter subscriber, so
+// both tables are checked; only one can match.
 export async function unsubscribeFromNewsletter(token: string): Promise<void> {
   await prisma.user.updateMany({
     where: { unsubscribeToken: token, newsletterOptOutAt: null },
     data: { newsletterOptIn: false, newsletterOptOutAt: new Date() },
+  });
+  await prisma.newsletterSubscriber.updateMany({
+    where: { unsubscribeToken: token, unsubscribedAt: null },
+    data: { unsubscribedAt: new Date() },
   });
   revalidatePath("/unsubscribe");
 }

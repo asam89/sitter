@@ -520,6 +520,30 @@ model EmailCampaign {
   @@index([sentAt])
 }
 
+// Newsletter sign-ups from people who may not have an account (public form in
+// the footer/home page). CASL wants provable express consent, so the row keeps
+// the wording shown and the request metadata, and the address is only mailable
+// once the recipient clicks the confirmation link (double opt-in): confirmedAt
+// is the proof that whoever owns the inbox asked for it.
+model NewsletterSubscriber {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  // SHA-256 of the emailed confirmation token; cleared once confirmed.
+  confirmTokenHash String?   @unique
+  confirmSentAt    DateTime?
+  confirmedAt      DateTime?
+  consentText      String
+  ipAddress        String?
+  userAgent        String?
+  source           String? // where they signed up, e.g. "footer", "home"
+  unsubscribeToken String    @unique
+  unsubscribedAt   DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([confirmedAt])
+}
+
 // Audit row for each booking notification dispatch attempt (per recipient/channel).
 model Notification {
   id              String              @id @default(cuid())

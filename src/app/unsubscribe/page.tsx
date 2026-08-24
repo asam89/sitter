@@ -15,16 +15,33 @@ export default async function UnsubscribePage({
   searchParams: { token?: string };
 }) {
   const token = searchParams.token?.trim();
-  const user = token
-    ? await prisma.user.findUnique({
-        where: { unsubscribeToken: token },
-        select: {
-          email: true,
+  // The token belongs either to an account or to a public subscriber who never
+  // registered; both are presented the same way.
+  const [account, subscriber] = token
+    ? await Promise.all([
+        prisma.user.findUnique({
+          where: { unsubscribeToken: token },
+          select: {
+            email: true,
+            newsletterOptIn: true,
+            newsletterOptOutAt: true,
+          },
+        }),
+        prisma.newsletterSubscriber.findUnique({
+          where: { unsubscribeToken: token },
+          select: { email: true, unsubscribedAt: true },
+        }),
+      ])
+    : [null, null];
+  const user =
+    account ??
+    (subscriber
+      ? {
+          email: subscriber.email,
           newsletterOptIn: true,
-          newsletterOptOutAt: true,
-        },
-      })
-    : null;
+          newsletterOptOutAt: subscriber.unsubscribedAt,
+        }
+      : null);
 
   return (
     <div className="mx-auto max-w-lg">

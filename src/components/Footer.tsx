@@ -1,8 +1,20 @@
 import Link from "next/link";
+import { NewsletterSignup } from "@/components/NewsletterSignup";
 
 export function Footer() {
   return (
     <footer className="mt-12 border-t border-brand-teal/15 bg-white">
+      <div className="mx-auto w-full max-w-5xl border-b border-brand-teal/10 px-4 py-6">
+        <p className="text-sm font-semibold text-brand-ink">
+          Ri&apos;aya newsletter
+        </p>
+        <p className="mb-3 text-xs text-brand-teal-light">
+          News, sitter availability and childcare tips. Unsubscribe any time.
+        </p>
+        <div className="max-w-md">
+          <NewsletterSignup source="footer" compact />
+        </div>
+      </div>
       <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-4 px-4 py-8 text-center sm:flex-row sm:justify-between sm:text-left">
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}

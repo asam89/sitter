@@ -113,6 +113,22 @@ function buildMessage(
   }
 }
 
+// The completed-booking email is the one transactional message where inviting a
+// parent to the newsletter is appropriate. It links to the sign-up page, so
+// receiving it never subscribes anyone, and parents who already opted in or
+// deliberately unsubscribed aren't asked.
+async function newsletterInvite(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { newsletterOptIn: true, newsletterOptOutAt: true },
+  });
+  if (!user || user.newsletterOptIn || user.newsletterOptOutAt) return "";
+  return (
+    `\n\nWant Ri'aya news, availability and childcare tips by email? ` +
+    `Sign up here: ${appUrl("/newsletter")}`
+  );
+}
+
 // Which channels are enabled for the business (email always on).
 function enabledChannels(settings: BusinessSettings): Channel[] {
   const channels: Channel[] = ["EMAIL"];
@@ -177,9 +193,21 @@ export async function notifyBookingEvent(
     audience: opts.audience,
   });
 
+  // Only the email body carries the newsletter invitation — texts stay terse.
+  const invite =
+    event === "COMPLETED" && opts.audience === "PARENT"
+      ? await newsletterInvite(opts.recipient.userId)
+      : "";
+
   for (const channel of enabledChannels(opts.settings)) {
     const to = channel === "EMAIL" ? opts.recipient.email : opts.recipient.phone;
-    const result = await dispatchOne(channel, to, msg);
+    const result = await dispatchOne(
+      channel,
+      to,
+      channel === "EMAIL" && invite
+        ? { ...msg, body: `${msg.body}${invite}` }
+        : msg,
+    );
     try {
       await prisma.notification.create({
         data: {

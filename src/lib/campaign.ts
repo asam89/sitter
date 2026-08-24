@@ -4,7 +4,9 @@
 // consent, the sender's identity with a mailing address, and a working
 // unsubscribe link. Two kinds of consent are supported:
 //
-//   NEWSLETTER — express consent: the parent ticked the newsletter box.
+//   NEWSLETTER — express consent: the parent ticked the newsletter box, or
+//                someone confirmed a public sign-up by clicking the link we
+//                emailed them (double opt-in).
 //   REGISTERED — implied consent from an existing business relationship, which
 //                CASL limits to two years after the relationship (signing up,
 //                or the most recent booking). Suitable for a reminder that the
@@ -22,6 +24,7 @@ export type CampaignAudience = {
   newsletter: number;
   registered: number;
   parents: number; // every active parent, for the suppressed count
+  subscribers: number; // confirmed public sign-ups without an account
 };
 
 export type CampaignState = {
@@ -38,6 +41,13 @@ export function impliedConsentSince(now = new Date()): Date {
   since.setMonth(since.getMonth() - IMPLIED_CONSENT_MONTHS);
   return since;
 }
+
+// Public sign-ups are only mailable once the emailed confirmation link was
+// clicked and they have not unsubscribed.
+export const CONFIRMED_SUBSCRIBERS = {
+  confirmedAt: { not: null },
+  unsubscribedAt: null,
+} as const;
 
 // Parents who gave express newsletter consent and have not opted out.
 export const CONSENTED_PARENTS = {

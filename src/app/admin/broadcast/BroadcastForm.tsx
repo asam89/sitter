@@ -12,6 +12,7 @@ export function BroadcastForm({
   action,
   footerFor,
   newsletterCount,
+  subscriberCount,
   registeredCount,
   parentCount,
   impliedMonths,
@@ -19,13 +20,17 @@ export function BroadcastForm({
   action: (state: CampaignState, fd: FormData) => Promise<CampaignState>;
   footerFor: Record<CampaignAudienceKind, string>;
   newsletterCount: number;
+  subscriberCount: number;
   registeredCount: number;
   parentCount: number;
   impliedMonths: number;
 }) {
   const [state, formAction] = useFormState(action, {});
   const [audience, setAudience] = useState<CampaignAudienceKind>("NEWSLETTER");
-  const count = audience === "NEWSLETTER" ? newsletterCount : registeredCount;
+  const count =
+    audience === "NEWSLETTER"
+      ? newsletterCount + subscriberCount
+      : registeredCount;
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [preview, setPreview] = useState(false);
@@ -47,9 +52,11 @@ export function BroadcastForm({
               className="mt-1"
             />
             <span>
-              <strong>Newsletter subscribers</strong> — {newsletterCount} parent
-              {newsletterCount === 1 ? "" : "s"} who ticked the box (express
-              consent).
+              <strong>Newsletter subscribers</strong> —{" "}
+              {newsletterCount + subscriberCount} with express consent:{" "}
+              {newsletterCount} parent{newsletterCount === 1 ? "" : "s"} who
+              ticked the box and {subscriberCount} public sign-up
+              {subscriberCount === 1 ? "" : "s"} who confirmed by email.
             </span>
           </label>
           <label className="flex gap-2 text-sm">

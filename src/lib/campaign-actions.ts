@@ -8,6 +8,7 @@ import { requireRole } from "@/lib/session";
 import { campaignSchema } from "@/lib/validation";
 import { getEmailProvider } from "@/lib/notifications";
 import {
+  CONFIRMED_SUBSCRIBERS,
   CONSENTED_PARENTS,
   audienceWhere,
   campaignFooter,
@@ -17,12 +18,13 @@ import {
 } from "@/lib/campaign";
 
 export async function campaignAudience(): Promise<CampaignAudience> {
-  const [newsletter, registered, parents] = await Promise.all([
+  const [newsletter, registered, parents, subscribers] = await Promise.all([
     prisma.user.count({ where: CONSENTED_PARENTS }),
     prisma.user.count({ where: registeredParents() }),
     prisma.user.count({ where: { role: "PARENT", suspended: false } }),
+    prisma.newsletterSubscriber.count({ where: CONFIRMED_SUBSCRIBERS }),
   ]);
-  return { newsletter, registered, parents };
+  return { newsletter, registered, parents, subscribers };
 }
 
 // Every marketing email must carry a working unsubscribe link, so parents who
@@ -57,12 +59,37 @@ export async function sendCampaign(
     fd.get("audience") === "REGISTERED" ? "REGISTERED" : "NEWSLETTER"
   ) satisfies CampaignAudienceKind;
 
-  const recipients = await prisma.user.findMany({
+  const accounts = await prisma.user.findMany({
     where: audienceWhere(audienceKind),
     select: { id: true, email: true, name: true, unsubscribeToken: true },
   });
+  // Public sign-ups belong to the express-consent audience only. Anyone who also
+  // holds an account is mailed once, through the account row.
+  const subscribers =
+    audienceKind === "NEWSLETTER"
+      ? (
+          await prisma.newsletterSubscriber.findMany({
+            where: CONFIRMED_SUBSCRIBERS,
+            select: { email: true, unsubscribeToken: true },
+          })
+        ).filter((s) => !accounts.some((a) => a.email === s.email))
+      : [];
+  const recipients = [
+    ...accounts.map((a) => ({
+      email: a.email,
+      name: a.name as string | null,
+      unsubscribeToken: a.unsubscribeToken,
+      userId: a.id as string | null,
+    })),
+    ...subscribers.map((s) => ({
+      email: s.email,
+      name: null,
+      unsubscribeToken: s.unsubscribeToken,
+      userId: null,
+    })),
+  ];
   const audience = await campaignAudience();
-  const suppressed = audience.parents - recipients.length;
+  const suppressed = audience.parents - accounts.length;
   if (recipients.length === 0) {
     return {
       error:
@@ -77,7 +104,12 @@ export async function sendCampaign(
   let failures = 0;
   for (const r of recipients) {
     try {
-      const token = await ensureUnsubscribeToken(r);
+      const token = r.userId
+        ? await ensureUnsubscribeToken({
+            id: r.userId,
+            unsubscribeToken: r.unsubscribeToken,
+          })
+        : r.unsubscribeToken;
       await provider.sendMessage(r.email, {
         subject,
         body:

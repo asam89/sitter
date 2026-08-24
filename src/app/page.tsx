@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getSession } from "@/lib/session";
+import { NewsletterSignup } from "@/components/NewsletterSignup";
 
 const PILLARS = [
   {
@@ -117,6 +118,19 @@ export default async function Home() {
         >
           Meet our team
         </Link>
+      </section>
+
+      <section className="rounded-xl border border-brand-teal/10 bg-white p-6">
+        <h3 className="text-lg font-semibold text-brand-ink">
+          Stay in the loop
+        </h3>
+        <p className="mt-1 max-w-xl text-sm text-brand-teal-light">
+          Get sitter availability, new-sitter announcements and childcare tips.
+          We&apos;ll send a confirmation link first.
+        </p>
+        <div className="mt-4 max-w-md">
+          <NewsletterSignup source="home" />
+        </div>
       </section>
 
       <section className="rounded-xl border border-brand-teal/10 bg-white p-6 text-sm text-brand-teal-light">

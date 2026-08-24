@@ -12,13 +12,15 @@ import { BOOKING_STATUS_COLOR } from "@/lib/status";
 import { dt, money, requestRef } from "@/lib/format";
 import { getParentBookingEligibility, LEVEL_LABEL } from "@/lib/verification";
 import { cancelBookingRequest } from "@/lib/actions";
+import { optInToNewsletter } from "@/lib/newsletter-actions";
+import { NEWSLETTER_CONSENT_TEXT } from "@/lib/consent";
 import { ActionButton } from "@/components/ActionButton";
 
 export const dynamic = "force-dynamic";
 
 export default async function ParentDashboard() {
   const user = await requireRole("PARENT");
-  const [bookings, eligibility, openRequests] = await Promise.all([
+  const [bookings, eligibility, openRequests, account] = await Promise.all([
     prisma.booking.findMany({
       where: { parentId: user.id },
       orderBy: { dateTime: "desc" },
@@ -29,7 +31,14 @@ export default async function ParentDashboard() {
       where: { parentId: user.id, status: "OPEN" },
       orderBy: { startTime: "asc" },
     }),
+    prisma.user.findUnique({
+      where: { id: user.id },
+      select: { newsletterOptIn: true, newsletterOptOutAt: true },
+    }),
   ]);
+  // Someone who deliberately unsubscribed isn't asked again here.
+  const showNewsletterPrompt =
+    account && !account.newsletterOptIn && !account.newsletterOptOutAt;
   const active = bookings.filter((b) =>
     ["REQUESTED", "APPROVED", "IN_PROGRESS"].includes(b.status),
   );
@@ -124,6 +133,22 @@ export default async function ParentDashboard() {
           {eligibility.canBook ? "Request a sitter" : "Verify to request"}
         </ButtonLink>
       </Card>
+
+      {showNewsletterPrompt && (
+        <Card className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="font-semibold text-brand-ink">
+              Ri&apos;aya news and availability updates
+            </h2>
+            <p className="text-sm text-brand-teal-light">
+              {NEWSLETTER_CONSENT_TEXT}
+            </p>
+          </div>
+          <ActionButton action={optInToNewsletter} variant="secondary">
+            Sign me up
+          </ActionButton>
+        </Card>
+      )}
 
       {openRequests.length > 0 && (
         <section>
