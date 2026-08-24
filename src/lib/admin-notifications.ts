@@ -43,6 +43,18 @@ function adminPhones(): string[] {
     .filter(Boolean);
 }
 
+// Who alerts actually go to, and why — surfaced on /admin/users so an Admin can
+// see at a glance that their address is on the list.
+export async function adminAlertRecipients(): Promise<{
+  emails: string[];
+  source: "ADMIN_ACCOUNTS" | "ENV_OVERRIDE";
+}> {
+  return {
+    emails: await adminRecipients(),
+    source: process.env.ADMIN_ALERT_EMAILS ? "ENV_OVERRIDE" : "ADMIN_ACCOUNTS",
+  };
+}
+
 async function adminRecipients(): Promise<string[]> {
   const override = process.env.ADMIN_ALERT_EMAILS;
   if (override) {
@@ -66,13 +78,28 @@ async function alertAdmins(
   if (!isEnabled(alert)) return;
   try {
     const to = await adminRecipients();
-    const email = getEmailProvider();
-    for (const address of to) {
-      await email.sendMessage(address, {
-        subject,
-        body: `${body}\n\n— Ri'aya Babysitters Inc.`,
-      });
+    if (to.length === 0) {
+      console.error(`[admin-notify] ${alert}: no Admin recipients on file`);
     }
+    const email = getEmailProvider();
+    // Each Admin is sent independently: one bad or bouncing address must not
+    // silently mute the alert for every Admin after it in the list.
+    const results = await Promise.allSettled(
+      to.map((address) =>
+        email.sendMessage(address, {
+          subject,
+          body: `${body}\n\n— Ri'aya Babysitters Inc.`,
+        }),
+      ),
+    );
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(
+          `[admin-notify] ${alert} email to ${to[i]} failed: ` +
+            String(r.reason).slice(0, 200),
+        );
+      }
+    });
   } catch (e) {
     console.error(
       `[admin-notify] ${alert} email alert failed: ${String(e).slice(0, 200)}`,
@@ -84,9 +111,19 @@ async function alertAdmins(
     const phones = adminPhones();
     if (phones.length === 0) return;
     const sms = getSmsProvider();
-    for (const phone of phones) {
-      await sms.sendMessage(phone, { subject, body: `Ri'aya: ${subject}` });
-    }
+    const results = await Promise.allSettled(
+      phones.map((phone) =>
+        sms.sendMessage(phone, { subject, body: `Ri'aya: ${subject}` }),
+      ),
+    );
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(
+          `[admin-notify] ${alert} SMS to ${phones[i]} failed: ` +
+            String(r.reason).slice(0, 200),
+        );
+      }
+    });
   } catch (e) {
     console.error(
       `[admin-notify] ${alert} SMS alert failed: ${String(e).slice(0, 200)}`,
