@@ -138,6 +138,8 @@ export async function submitApplication(fd: FormData) {
     certifications: s(fd, "certifications"),
     documentUrls: s(fd, "documentUrls"),
     targetPayRate: s(fd, "targetPayRate"),
+    whatsappPhone: s(fd, "whatsappPhone"),
+    whatsappReachable: s(fd, "whatsappReachable"),
   });
   if (!parsed.success) throw new Error("Invalid application");
   const d = parsed.data;
@@ -162,6 +164,8 @@ export async function submitApplication(fd: FormData) {
       certifications: linesToArray(d.certifications),
       documentUrls: linesToArray(d.documentUrls),
       targetPayRate: d.targetPayRate,
+      whatsappPhone: d.whatsappPhone,
+      whatsappReachable: d.whatsappReachable,
       status: "APPLIED",
     },
     update: {
@@ -170,6 +174,8 @@ export async function submitApplication(fd: FormData) {
       certifications: linesToArray(d.certifications),
       documentUrls: linesToArray(d.documentUrls),
       targetPayRate: d.targetPayRate,
+      whatsappPhone: d.whatsappPhone,
+      whatsappReachable: d.whatsappReachable,
       status: "APPLIED",
       reviewedByAdminId: null,
       reviewedAt: null,
@@ -177,11 +183,26 @@ export async function submitApplication(fd: FormData) {
       interviewNotes: null,
     },
   });
+  // The application number doubles as the sitter's contact number: keep it on
+  // the account so booking texts reach them, but never clear a verified phone.
+  const account = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { phone: true, phoneVerified: true },
+  });
+  if (!account?.phoneVerified && account?.phone !== d.whatsappPhone) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { phone: d.whatsappPhone },
+    });
+  }
+
   await notifyAdminsOfApplication({
     name: user.name ?? null,
     email: user.email ?? null,
     targetPayRate: d.targetPayRate,
     resubmitted: wasResubmitted,
+    whatsappPhone: d.whatsappPhone,
+    whatsappReachable: d.whatsappReachable,
   });
 
   revalidatePath("/sitter");

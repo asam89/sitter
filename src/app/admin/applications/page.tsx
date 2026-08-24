@@ -50,6 +50,27 @@ export default async function ApplicationsPage() {
                       {a.user.email}
                     </span>
                   </p>
+                  {a.whatsappPhone && (
+                    <p className="mt-1 text-sm text-slate-600">
+                      <span className="font-medium">Mobile:</span>{" "}
+                      {a.whatsappPhone}
+                      {a.whatsappReachable ? (
+                        <>
+                          {" · "}
+                          <a
+                            href={`https://wa.me/${a.whatsappPhone.replace(/\D/g, "")}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand-coral"
+                          >
+                            WhatsApp
+                          </a>
+                        </>
+                      ) : (
+                        " · not on WhatsApp"
+                      )}
+                    </p>
+                  )}
                   <p className="mt-1 text-sm text-slate-600">{a.bio}</p>
                   <p className="mt-1 text-sm text-slate-600">
                     <span className="font-medium">Experience:</span>{" "}

@@ -11,6 +11,10 @@ export default async function SitterApplyPage() {
   const app = await prisma.sitterApplication.findUnique({
     where: { userId: user.id },
   });
+  const account = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { phone: true },
+  });
   if (app?.status === "VETTED") redirect("/sitter");
 
   const input =
@@ -45,6 +49,37 @@ export default async function SitterApplyPage() {
               defaultValue={app?.experience ?? ""}
               className={input}
             />
+          </label>
+          <label className="block text-sm font-medium">
+            Mobile number
+            <input
+              type="tel"
+              name="whatsappPhone"
+              required
+              inputMode="tel"
+              placeholder="+1 416 555 0134"
+              defaultValue={app?.whatsappPhone ?? account?.phone ?? ""}
+              className={input}
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              Our team uses this to reach you about your application, the
+              interview, and bookings.
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              name="whatsappReachable"
+              defaultChecked={app?.whatsappReachable ?? true}
+              className="mt-1"
+            />
+            <span>
+              This number is on WhatsApp — you can message me there
+              <span className="mt-1 block text-xs font-normal text-slate-500">
+                Leave it unticked and we&rsquo;ll stick to calls, texts and
+                email.
+              </span>
+            </span>
           </label>
           <label className="block text-sm font-medium">
             Certifications (one per line or comma-separated)

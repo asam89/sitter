@@ -261,6 +261,10 @@ model SitterApplication {
   certifications       String[] // free-text labels, e.g. "CPR", "First Aid"
   documentUrls         String[] // uploaded doc URLs (CPR cert, police check, etc.)
   targetPayRate        Int // sitter's requested hourly rate (whole CAD)
+  // Mobile number the applicant is reachable on, plus whether that number is on
+  // WhatsApp. Nullable because applications predate this field.
+  whatsappPhone        String?
+  whatsappReachable    Boolean           @default(false)
   status               ApplicationStatus @default(APPLIED)
   reviewedByAdminId    String?
   reviewedAt           DateTime?

@@ -125,6 +125,8 @@ export async function notifyAdminsOfApplication(a: {
   email: string | null;
   targetPayRate: number;
   resubmitted: boolean;
+  whatsappPhone: string;
+  whatsappReachable: boolean;
 }): Promise<void> {
   const who = a.name || a.email || "A babysitter";
   await alertAdmins(
@@ -134,6 +136,8 @@ export async function notifyAdminsOfApplication(a: {
       `application and it's waiting for review.\n\n` +
       `Name: ${a.name ?? "—"}\n` +
       `Email: ${a.email ?? "—"}\n` +
+      `Mobile: ${a.whatsappPhone}` +
+      `${a.whatsappReachable ? " (on WhatsApp)" : " (not on WhatsApp)"}\n` +
       `Requested rate: ${money(a.targetPayRate)}/hr\n` +
       `Submitted: ${dt(new Date())}\n\n` +
       `Review and schedule the interview here: ${appUrl("/admin/applications")}`,
