@@ -85,6 +85,13 @@ enum InterviewStatus {
   COMPLETED
 }
 
+// How the parent pays. E-transfer settles outside the app, so an Admin records
+// the receipt manually.
+enum PaymentMethod {
+  CARD
+  ETRANSFER
+}
+
 enum RefundTier {
   UNPAID // nothing had been charged
   PARENT_EARLY // parent cancelled outside the full-refund window
@@ -172,6 +179,8 @@ model User {
   auditEntries         AdminAuditLog[]          @relation("AuditTarget")
   reviewsWritten       Review[]                 @relation("ReviewsWritten")
   reviewsReceived      Review[]                 @relation("ReviewsReceived")
+  bookingsCreated      Booking[]                @relation("AdminCreatedBookings")
+  paymentsRecorded     Booking[]                @relation("BookingPaymentsRecorded")
 }
 
 // Hashed one-time verification codes for email/phone. The raw code is never
@@ -364,12 +373,20 @@ model Booking {
 
   // Waiver acceptance record. IP and user-agent are kept alongside the version
   // and timestamp so an acceptance can be evidenced later.
+  // waiverAcceptedAt is null only while acceptance is outstanding, which happens
+  // for a booking an Admin entered on the parent's behalf: the parent accepts
+  // before paying, so no session runs without a waiver on file.
   waiverVersion           String
-  waiverAcceptedAt        DateTime
+  waiverAcceptedAt        DateTime?
   waiverAcceptedIp        String?
   waiverAcceptedUserAgent String?
 
   status                   BookingStatus   @default(REQUESTED)
+  // Set when an Admin entered the booking on the parent's behalf (phone/walk-in).
+  createdByAdminId         String?
+  paymentMethod            PaymentMethod?
+  // Admin who recorded an offline (e-transfer) payment.
+  paidRecordedById         String?
   stripePaymentIntentId    String?
   approvedAt               DateTime?
   declinedAt               DateTime?
@@ -402,6 +419,8 @@ model Booking {
 
   parent           User                 @relation("ParentBookings", fields: [parentId], references: [id])
   sitter           User                 @relation("SitterBookings", fields: [sitterId], references: [id])
+  createdByAdmin   User?                @relation("AdminCreatedBookings", fields: [createdByAdminId], references: [id])
+  paidRecordedBy   User?                @relation("BookingPaymentsRecorded", fields: [paidRecordedById], references: [id])
   availabilitySlot AvailabilitySlot     @relation(fields: [availabilitySlotId], references: [id])
   messages         Message[]
   reports          Report[]
@@ -665,6 +684,11 @@ model BusinessSettings {
   afterStartRefundPercent   Int @default(0)
   // A sitter (or Ri'aya) backing out never costs the parent anything.
   sitterCancelRefundPercent Int @default(100)
+
+  // --- Payments ---
+  // Interac e-Transfer recipient shown to parents who choose to pay offline.
+  // Blank hides the e-Transfer option, since there'd be nowhere to send money.
+  etransferEmail String?
 
   updatedAt DateTime @updatedAt
 }

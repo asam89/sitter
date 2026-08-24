@@ -122,6 +122,22 @@ export const bookingRequestSchema = z.object({
     }),
 });
 
+// Admin entering a booking on a parent's behalf. No waiver field: the parent
+// accepts the waiver themselves before paying.
+export const adminBookingSchema = z.object({
+  parentId: z.string().min(1, "Choose the parent."),
+  sitterProfileId: z.string().min(1, "Choose the sitter."),
+  startTime: z.string().min(1, "Choose a date and start time."),
+  durationHours: z.coerce
+    .number()
+    .int()
+    .min(1, "Bookings are at least 1 hour.")
+    .max(12, "Bookings can be up to 12 hours."),
+  childrenAgeRange: z.string().trim().min(1).max(40),
+  numberOfChildren: z.coerce.number().int().min(1).max(10),
+  notes: z.string().max(1000).optional().or(z.literal("")),
+});
+
 export const reportSchema = z.object({
   bookingId: z.string().min(1),
   reason: z.string().min(3).max(2000),
@@ -165,6 +181,11 @@ export const settingsSchema = z.object({
   lateRefundPercent: z.coerce.number().int().min(0).max(100),
   afterStartRefundPercent: z.coerce.number().int().min(0).max(100),
   sitterCancelRefundPercent: z.coerce.number().int().min(0).max(100),
+  etransferEmail: z
+    .string()
+    .trim()
+    .email("Enter a valid e-Transfer email, or leave it blank.")
+    .or(z.literal("")),
 });
 
 // A sitter pricing their own time. The Admin-set rate stays as the fallback.

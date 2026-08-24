@@ -63,13 +63,24 @@ function buildMessage(
   const link = appUrl(`/bookings/${ctx.bookingId}`);
   switch (event) {
     case "REQUESTED":
-      return {
-        subject: `New booking request from ${ctx.parentName}`,
-        body:
-          `${ctx.parentName} requested you${where} on ${when} for ` +
-          `${ctx.durationHours}h. You'd earn ${money(ctx.sitterEarns)} at ` +
-          `Ri'aya's set rate. Approve or decline: ${link}`,
-      };
+      // The parent only hears about a request they didn't place themselves —
+      // i.e. one Ri'aya entered for them.
+      return ctx.audience === "PARENT"
+        ? {
+            subject: `Your booking with ${ctx.sitterName} is pending`,
+            body:
+              `We've set up your booking with ${ctx.sitterName} on ${when} ` +
+              `for ${ctx.durationHours}h (${money(ctx.total)}). Once ` +
+              `${ctx.sitterName} confirms, you can accept the waiver and pay: ` +
+              link,
+          }
+        : {
+            subject: `New booking request from ${ctx.parentName}`,
+            body:
+              `${ctx.parentName} requested you${where} on ${when} for ` +
+              `${ctx.durationHours}h. You'd earn ${money(ctx.sitterEarns)} at ` +
+              `Ri'aya's set rate. Approve or decline: ${link}`,
+          };
     case "APPROVED":
       return ctx.audience === "PARENT"
         ? {
