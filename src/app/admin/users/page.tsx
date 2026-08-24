@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/session";
 import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
 import { dt } from "@/lib/format";
 import { LEVEL_LABEL } from "@/lib/verification";
+import { adminAlertRecipients } from "@/lib/admin-notifications";
 import { RoleForm } from "./RoleForm";
 import { UserSuspendButton } from "./UserSuspendButton";
 
@@ -32,7 +33,8 @@ export default async function AdminUsersPage({
       ? searchParams.role
       : undefined;
 
-  const [users, audit] = await Promise.all([
+  const [alerts, users, audit] = await Promise.all([
+    adminAlertRecipients(),
     prisma.user.findMany({
       where: {
         ...(roleFilter ? { role: roleFilter } : {}),
@@ -66,6 +68,20 @@ export default async function AdminUsersPage({
         title="User accounts"
         subtitle="See every account, change roles, and grant or remove Admin access."
       />
+
+      <Card className="space-y-1">
+        <p className="text-sm font-medium">
+          Email alerts (new sign-ups, sitter applications, bookings) go to
+        </p>
+        <p className="text-sm text-slate-600">
+          {alerts.emails.length > 0 ? alerts.emails.join(", ") : "nobody"}
+        </p>
+        <p className="text-xs text-slate-500">
+          {alerts.source === "ADMIN_ACCOUNTS"
+            ? "Every active Admin account receives them — promote someone to Admin below and they are added automatically."
+            : "Set explicitly by ADMIN_ALERT_EMAILS, which overrides the Admin accounts below."}
+        </p>
+      </Card>
 
       <Card>
         <form className="flex flex-wrap items-end gap-2">
