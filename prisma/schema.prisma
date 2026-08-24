@@ -168,6 +168,8 @@ model User {
   idDocsReviewed       IdVerificationDocument[] @relation("IdDocReviewer")
   notifications        Notification[]           @relation("UserNotifications")
   campaigns            EmailCampaign[]          @relation("AdminCampaigns")
+  auditActions         AdminAuditLog[]          @relation("AuditActor")
+  auditEntries         AdminAuditLog[]          @relation("AuditTarget")
   reviewsWritten       Review[]                 @relation("ReviewsWritten")
   reviewsReceived      Review[]                 @relation("ReviewsReceived")
 }
@@ -470,18 +472,44 @@ model ChildMedicalRecord {
   @@index([purgeAfter])
 }
 
+// Audience an Admin broadcast was sent to. Express = the parent ticked the
+// newsletter box; REGISTERED relies on CASL's implied consent from an existing
+// business relationship, which expires 2 years after signup or last booking.
+enum CampaignAudienceKind {
+  NEWSLETTER
+  REGISTERED
+}
+
+// Record of an Admin changing another account's role or suspension, so a
+// privilege change is always attributable after the fact.
+model AdminAuditLog {
+  id           String   @id @default(cuid())
+  actorId      String
+  targetUserId String
+  action       String // e.g. "role:PARENT->ADMIN"
+  detail       String?
+  createdAt    DateTime @default(now())
+
+  actor  User @relation("AuditActor", fields: [actorId], references: [id])
+  target User @relation("AuditTarget", fields: [targetUserId], references: [id])
+
+  @@index([createdAt])
+  @@index([targetUserId])
+}
+
 // One Admin email broadcast to parents. Only parents with express newsletter
 // consent on file receive it (CASL), and the send is recorded so it is
 // auditable after the fact.
 model EmailCampaign {
-  id              String   @id @default(cuid())
+  id              String               @id @default(cuid())
   subject         String
   body            String
   sentByUserId    String
-  recipientCount  Int      @default(0)
-  failureCount    Int      @default(0)
-  suppressedCount Int      @default(0)
-  sentAt          DateTime @default(now())
+  audience        CampaignAudienceKind @default(NEWSLETTER)
+  recipientCount  Int                  @default(0)
+  failureCount    Int                  @default(0)
+  suppressedCount Int                  @default(0)
+  sentAt          DateTime             @default(now())
 
   sentBy User @relation("AdminCampaigns", fields: [sentByUserId], references: [id])
 

@@ -131,6 +131,9 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/parents" variant="secondary">
             Parents
           </ButtonLink>
+          <ButtonLink href="/admin/users" variant="secondary">
+            User accounts
+          </ButtonLink>
           <ButtonLink href="/admin/broadcast" variant="secondary">
             Email parents
           </ButtonLink>

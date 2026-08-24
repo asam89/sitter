@@ -39,15 +39,11 @@ export default async function UnsubscribePage({
             used, or the address was removed. Reply to any Ri&apos;aya email and
             we&apos;ll take you off the list.
           </p>
-        ) : !user.newsletterOptIn ? (
+        ) : user.newsletterOptOutAt ? (
           <>
             <p className="text-sm text-slate-700">
-              <strong>{user.email}</strong> is not subscribed to the Ri&apos;aya
-              newsletter
-              {user.newsletterOptOutAt
-                ? ` (unsubscribed ${dt(user.newsletterOptOutAt)})`
-                : ""}
-              .
+              <strong>{user.email}</strong> is unsubscribed from Ri&apos;aya
+              marketing email (as of {dt(user.newsletterOptOutAt)}).
             </p>
             <p className="text-xs text-slate-500">
               You&apos;ll still get emails about your own account and bookings —
@@ -57,8 +53,12 @@ export default async function UnsubscribePage({
         ) : (
           <>
             <p className="text-sm text-slate-700">
-              <strong>{user.email}</strong> is subscribed to Ri&apos;aya news and
-              updates.
+              <strong>{user.email}</strong> can currently receive Ri&apos;aya news
+              and updates
+              {user.newsletterOptIn
+                ? " — you asked us to email you these"
+                : " — because you have an account with us"}
+              .
             </p>
             <ActionButton
               action={unsubscribeFromNewsletter.bind(null, token as string)}

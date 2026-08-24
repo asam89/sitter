@@ -79,8 +79,26 @@ booking stands regardless of the interview status.
 
 ## Admin parent broadcast
 
-`/admin/broadcast` emails only parents with express newsletter consent on file
-(CASL), suppresses everyone else, and appends the sender identity
-(`BUSINESS_IDENTITY`) and a working unsubscribe link. Each send is logged with
-delivered, failed and suppressed counts. Transactional email still reaches
-parents who have unsubscribed.
+`/admin/broadcast` has two audiences, and appends the sender identity
+(`BUSINESS_IDENTITY`) plus a working unsubscribe link to both:
+
+- **Newsletter subscribers** — express consent (`newsletterOptIn`).
+- **All registered parents** — CASL's implied consent from an existing business
+  relationship, which expires `IMPLIED_CONSENT_MONTHS` (24) after signup or the
+  most recent booking. Intended for occasional service reminders, not ongoing
+  marketing.
+
+Anyone with `newsletterOptOutAt` set is excluded from both, and unsubscribing
+works even for a parent who never ticked the box. Each send is logged with the
+audience and its delivered, failed and suppressed counts. Transactional email
+still reaches parents who have unsubscribed. This reflects our reading of CASL
+and is not legal advice.
+
+## Account administration
+
+`/admin/users` lists every account with search and a role filter, and lets an
+Admin change a role or suspend an account. Guard rails: you cannot change your
+own role or suspend yourself, the last active Admin cannot be demoted or
+suspended, and a role change is refused while the account still has bookings in
+flight. Every change is written to `AdminAuditLog` with the actor, and the last
+15 entries are shown on the page.
