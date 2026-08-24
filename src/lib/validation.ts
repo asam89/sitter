@@ -35,12 +35,24 @@ const linesToArray = (v: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
+// HTML checkboxes post "on" when ticked and nothing at all when not.
+const checkbox = z
+  .union([z.literal("on"), z.literal("true"), z.literal(""), z.boolean()])
+  .optional()
+  .transform((v) => v === "on" || v === "true" || v === true);
+
 export const applicationSchema = z.object({
   bio: z.string().min(10).max(2000),
   experience: z.string().min(10).max(2000),
   certifications: z.string().max(1000).optional().default(""),
   documentUrls: z.string().max(2000).optional().default(""),
   targetPayRate: z.coerce.number().int().min(1).max(500),
+  whatsappPhone: z
+    .string()
+    .trim()
+    .min(7, "Enter a valid mobile number.")
+    .max(40),
+  whatsappReachable: checkbox,
 });
 
 export const vetSchema = z.object({
