@@ -71,6 +71,20 @@ percent, amount, who cancelled, their reason, and the processor's refund id and
 status (`mock` when there was no real charge). With Stripe configured the
 refund is issued against the original payment intent.
 
+## Pre-session reminders
+
+Both the parent and the sitter get a reminder before a **confirmed** (approved
+and paid) booking starts — `reminderLeadHours` (24h) and
+`reminderFinalLeadHours` (2h) ahead, either set to 0 to disable. Every reminder
+email names the support address (`supportEmail`, default `support@riaya.ca`,
+also shown in the site footer).
+
+Driven by `POST /api/maintenance/booking-reminders` (needs `MAINTENANCE_TOKEN`).
+Run it **hourly** — a reminder is never earlier than the cron interval allows.
+Sends are idempotent: each booking's reminder timestamp is claimed before the
+message goes out, and the final reminder also stamps the earlier one, so a job
+that was down over the 24h mark won't later send a stale "tomorrow" reminder.
+
 ## Optional intro call
 
 A parent can propose a short call before the session (default suggestion ~24h

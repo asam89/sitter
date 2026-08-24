@@ -413,6 +413,9 @@ model Booking {
   interviewNote            String?
   refundProcessorId        String? // Stripe refund id, null for mock payments
   refundProcessorStatus    String? // "mock" when no real charge existed
+  // Pre-session reminders, stamped so a cron re-run can't send twice.
+  reminderSentAt           DateTime?
+  finalReminderSentAt      DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -689,6 +692,14 @@ model BusinessSettings {
   // Interac e-Transfer recipient shown to parents who choose to pay offline.
   // Blank hides the e-Transfer option, since there'd be nowhere to send money.
   etransferEmail String?
+
+  // --- Support / reminders ---
+  // Address quoted in reminders so both sides know who to contact.
+  supportEmail String? @default("support@riaya.ca")
+  // Hours before the start at which each pre-session reminder goes out. 0
+  // disables that reminder.
+  reminderLeadHours      Int @default(24)
+  reminderFinalLeadHours Int @default(2)
 
   updatedAt DateTime @updatedAt
 }

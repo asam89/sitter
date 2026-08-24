@@ -339,6 +339,51 @@ export default async function AdminSettingsPage() {
 
           <fieldset className="rounded-lg border border-slate-200 p-3">
             <legend className="px-1 text-sm font-semibold">
+              Support &amp; reminders
+            </legend>
+            <label className="block text-sm font-medium">
+              Support email
+              <input
+                type="email"
+                name="supportEmail"
+                defaultValue={s.supportEmail ?? ""}
+                placeholder="support@riaya.ca"
+                className={input}
+              />
+            </label>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-medium">
+                First reminder (hours before start)
+                <input
+                  type="number"
+                  name="reminderLeadHours"
+                  min={0}
+                  max={168}
+                  defaultValue={s.reminderLeadHours}
+                  className={input}
+                />
+              </label>
+              <label className="block text-sm font-medium">
+                Final reminder (hours before start)
+                <input
+                  type="number"
+                  name="reminderFinalLeadHours"
+                  min={0}
+                  max={168}
+                  defaultValue={s.reminderFinalLeadHours}
+                  className={input}
+                />
+              </label>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Parent and sitter both get a reminder before a confirmed (paid)
+              booking starts, with the support address above. Set an interval to
+              0 to switch that reminder off.
+            </p>
+          </fieldset>
+
+          <fieldset className="rounded-lg border border-slate-200 p-3">
+            <legend className="px-1 text-sm font-semibold">
               Sitter notification channels
             </legend>
             <p className="mb-2 text-xs text-slate-500">

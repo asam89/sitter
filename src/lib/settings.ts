@@ -71,6 +71,9 @@ export type BusinessSettingsInput = {
   afterStartRefundPercent: number;
   sitterCancelRefundPercent: number;
   etransferEmail: string | null;
+  supportEmail: string | null;
+  reminderLeadHours: number;
+  reminderFinalLeadHours: number;
 };
 
 export async function updateBusinessSettings(
