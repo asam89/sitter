@@ -1,7 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { getParentBookingEligibility } from "@/lib/verification";
+import {
+  getParentBookingEligibility,
+  getServiceAddressOnFile,
+} from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
 import { computePrice, effectiveRate, isLastMinute } from "@/lib/pricing";
@@ -24,7 +27,9 @@ export default async function BookSlotPage({
   if (!eligibility.canBook) redirect("/parent/verify");
   const slot = await prisma.availabilitySlot.findUnique({
     where: { id: params.slotId },
-    include: { sitterProfile: { include: { user: { select: { name: true } } } } },
+    include: {
+      sitterProfile: { include: { user: { select: { name: true } } } },
+    },
   });
   if (!slot || slot.status !== "OPEN" || !slot.sitterProfile.isListed) {
     notFound();
@@ -32,6 +37,7 @@ export default async function BookSlotPage({
 
   const settings = await getBusinessSettings();
   const terms = await getActiveTerms();
+  const addressOnFile = await getServiceAddressOnFile(user.id);
   const duration = Math.max(
     1,
     Math.round(differenceInMinutes(slot.endTime, slot.startTime) / 60),
@@ -134,8 +140,8 @@ export default async function BookSlotPage({
         <Card>
           <p className="text-sm text-slate-700">
             This block is {duration}h and bookings are a minimum of{" "}
-            {settings.minBookingHours} hours. Ask this sitter for a longer block,
-            or post a request for the time you need.
+            {settings.minBookingHours} hours. Ask this sitter for a longer
+            block, or post a request for the time you need.
           </p>
         </Card>
       ) : (
@@ -144,19 +150,14 @@ export default async function BookSlotPage({
           action={createBooking}
           termsVersion={terms.version}
           termsBody={terms.body}
+          addressOnFile={addressOnFile}
         />
       )}
     </div>
   );
 }
 
-function Row({
-  label,
-  value,
-}: {
-  label: React.ReactNode;
-  value: string;
-}) {
+function Row({ label, value }: { label: React.ReactNode; value: string }) {
   return (
     <div className="flex justify-between">
       <span className="text-slate-600">{label}</span>

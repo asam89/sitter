@@ -21,9 +21,16 @@ import {
 } from "@/lib/child-medical";
 import { getActiveTerms } from "@/lib/terms";
 import { dt, time } from "@/lib/format";
-import { meetsLevel, LEVEL_LABEL } from "@/lib/verification";
+import {
+  ensureServiceAddress,
+  meetsLevel,
+  LEVEL_LABEL,
+} from "@/lib/verification";
 import { stripeEnabled, stripe } from "@/lib/stripe";
-import { notifyBookingEvent, type BookingEvent } from "@/lib/booking-notifications";
+import {
+  notifyBookingEvent,
+  type BookingEvent,
+} from "@/lib/booking-notifications";
 import {
   notifySitterVetted,
   notifySitterListed,
@@ -563,6 +570,11 @@ export async function createBooking(
     };
   }
 
+  // The sitter has to know where to go, so a parent booking below the LEVEL_2
+  // gate supplies the service address here and it is kept on their profile.
+  const address = await ensureServiceAddress(user.id, fd);
+  if (!address.ok) return { error: address.error };
+
   const parsed = bookingSchema.safeParse({
     slotId: s(fd, "slotId"),
     childrenAgeRange: s(fd, "childrenAgeRange"),
@@ -691,7 +703,9 @@ export async function adminCreateBooking(
     notes: s(fd, "notes"),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid booking input" };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid booking input",
+    };
   }
   const d = parsed.data;
   const start = new Date(d.startTime);
@@ -834,11 +848,7 @@ export async function createBookingRequest(
   const settings = await getBusinessSettings();
   const account = await prisma.user.findUniqueOrThrow({
     where: { id: user.id },
-    select: {
-      verificationLevel: true,
-      name: true,
-      parentProfile: { select: { city: true } },
-    },
+    select: { verificationLevel: true, name: true },
   });
   if (
     !meetsLevel(
@@ -876,6 +886,10 @@ export async function createBookingRequest(
     };
   }
 
+  // A claimed request becomes a booking, so the address is required here too.
+  const address = await ensureServiceAddress(user.id, fd);
+  if (!address.ok) return { error: address.error };
+
   const terms = await getActiveTerms();
   const acceptance = waiverAcceptanceContext();
   const request = await prisma.bookingRequest.create({
@@ -905,7 +919,7 @@ export async function createBookingRequest(
     durationHours: request.durationHours,
     numberOfChildren: request.numberOfChildren,
     childrenAgeRange: request.childrenAgeRange,
-    city: account.parentProfile?.city ?? null,
+    city: address.city,
     isLastMinute: isLastMinute(startTime, settings.lastMinuteThresholdHours),
   };
   const listedSitterCount = await prisma.sitterProfile.count({
@@ -1060,7 +1074,8 @@ export async function adminAssignBookingRequest(fd: FormData) {
   await requireRole("ADMIN");
   const requestId = s(fd, "requestId");
   const sitterProfileId = s(fd, "sitterProfileId");
-  if (!requestId || !sitterProfileId) throw new Error("Pick a sitter to assign.");
+  if (!requestId || !sitterProfileId)
+    throw new Error("Pick a sitter to assign.");
   await fulfilRequest(requestId, sitterProfileId);
   revalidatePath("/admin/requests");
   revalidatePath("/admin");
@@ -1164,6 +1179,11 @@ export async function payBooking(
   }
   if (booking.paidAt) return { error: "This booking is already paid." };
 
+  // An Admin-entered booking never went through the booking form, so this is
+  // the parent's first chance to give the address the sitter needs.
+  const address = await ensureServiceAddress(user.id, fd);
+  if (!address.ok) return { error: address.error };
+
   // An Admin-entered booking carries no waiver acceptance yet; the parent gives
   // it here, before any money moves.
   const waiver: Prisma.BookingUpdateInput = {};
@@ -1256,7 +1276,8 @@ export async function startBooking(bookingId: string) {
   if (booking.status !== "APPROVED") {
     throw new Error("Booking must be approved before it can start.");
   }
-  if (!booking.paidAt) throw new Error("Booking must be paid before it starts.");
+  if (!booking.paidAt)
+    throw new Error("Booking must be paid before it starts.");
   await prisma.booking.update({
     where: { id: bookingId },
     data: { status: "IN_PROGRESS", startedAt: new Date() },
@@ -1285,9 +1306,14 @@ export async function completeBooking(bookingId: string) {
   if (booking.status !== "IN_PROGRESS") {
     throw new Error("Booking must be in progress before completion.");
   }
-  if (!booking.paidAt) throw new Error("Booking must be paid before completion.");
+  if (!booking.paidAt)
+    throw new Error("Booking must be paid before completion.");
 
-  if (stripeEnabled && stripe && booking.sitter.sitterProfile?.stripeAccountId) {
+  if (
+    stripeEnabled &&
+    stripe &&
+    booking.sitter.sitterProfile?.stripeAccountId
+  ) {
     await stripe.transfers.create({
       amount: sitterPayout(booking) * 100,
       currency: "cad",
@@ -1490,7 +1516,9 @@ export async function connectStripe() {
   // completion/payout flow is exercisable end to end in dev/test.
   await prisma.sitterProfile.update({
     where: { id: profile.id },
-    data: { stripeAccountId: profile.stripeAccountId ?? `mock_acct_${profile.id}` },
+    data: {
+      stripeAccountId: profile.stripeAccountId ?? `mock_acct_${profile.id}`,
+    },
   });
   revalidatePath("/sitter");
 }

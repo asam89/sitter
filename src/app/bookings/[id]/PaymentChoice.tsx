@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { buttonClass } from "@/components/ui";
+import { ServiceAddressFields } from "@/components/ServiceAddressFields";
 import type { PaymentFormState } from "@/lib/actions";
 
 function SubmitButton({
@@ -16,7 +17,11 @@ function SubmitButton({
 }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={disabled || pending} className={buttonClass()}>
+    <button
+      type="submit"
+      disabled={disabled || pending}
+      className={buttonClass()}
+    >
       {method === "CARD"
         ? `Pay ${amount} by card`
         : `I'll send ${amount} by e-Transfer`}
@@ -36,11 +41,9 @@ export function PaymentChoice({
   termsVersion,
   termsBody,
   waiverOutstanding,
+  addressOnFile,
 }: {
-  action: (
-    state: PaymentFormState,
-    fd: FormData,
-  ) => Promise<PaymentFormState>;
+  action: (state: PaymentFormState, fd: FormData) => Promise<PaymentFormState>;
   bookingId: string;
   amount: string;
   etransferEmail: string | null;
@@ -48,6 +51,7 @@ export function PaymentChoice({
   termsVersion: string;
   termsBody: string;
   waiverOutstanding: boolean;
+  addressOnFile: { line: string } | null;
 }) {
   const [state, formAction] = useFormState(action, {});
   const [method, setMethod] = useState<"CARD" | "ETRANSFER">("CARD");
@@ -59,7 +63,9 @@ export function PaymentChoice({
       <input type="hidden" name="method" value={method} />
 
       <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">How would you like to pay?</legend>
+        <legend className="text-sm font-medium">
+          How would you like to pay?
+        </legend>
         <label className="flex items-start gap-2 text-sm">
           <input
             type="radio"
@@ -83,12 +89,15 @@ export function PaymentChoice({
             <span>
               <strong>Interac e-Transfer</strong> — send {amount} to{" "}
               <span className="font-mono">{etransferEmail}</span> with{" "}
-              <span className="font-mono">{bookingRef}</span> in the message. Our
-              team confirms the booking once it lands.
+              <span className="font-mono">{bookingRef}</span> in the message.
+              Our team confirms the booking once it lands.
             </span>
           </label>
         )}
       </fieldset>
+
+      {/* Only when it is still missing — an app-created booking already took it. */}
+      {!addressOnFile && <ServiceAddressFields onFile={null} />}
 
       {waiverOutstanding && (
         <div className="space-y-2">

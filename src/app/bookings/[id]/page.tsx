@@ -14,6 +14,7 @@ import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
 import { REFUND_TIER_LABEL, refundPolicyLines } from "@/lib/cancellation";
 import { readBookingMedical } from "@/lib/child-medical";
+import { hasServiceAddress } from "@/lib/verification";
 import { InterviewCard } from "./InterviewCard";
 import { PaymentChoice } from "./PaymentChoice";
 import { ActionButton } from "@/components/ActionButton";
@@ -93,9 +94,9 @@ export default async function BookingPage({
   // support.
   const addr = booking.parent.parentProfile;
   const addressUnlocked = booking.addressReleasedAt != null;
+  const addressComplete = !!addr && hasServiceAddress(addr);
   const showServiceAddress =
-    !!addr &&
-    (isParent || isAdmin || (isSitter && addressUnlocked));
+    !!addr && (isParent || isAdmin || (isSitter && addressUnlocked));
   const fullAddress = addr
     ? [
         addr.streetAddress,
@@ -133,12 +134,13 @@ export default async function BookingPage({
           <dd>{booking.sitter.name}</dd>
           <dt className="text-slate-500">When</dt>
           <dd>
-            {dt(booking.availabilitySlot.startTime)} → {" "}
+            {dt(booking.availabilitySlot.startTime)} →{" "}
             {dt(booking.availabilitySlot.endTime)} ({booking.durationHours}h)
           </dd>
           <dt className="text-slate-500">Children</dt>
           <dd>
-            {booking.numberOfChildren} child(ren), ages {booking.childrenAgeRange}
+            {booking.numberOfChildren} child(ren), ages{" "}
+            {booking.childrenAgeRange}
           </dd>
           {booking.notes && (
             <>
@@ -287,7 +289,9 @@ export default async function BookingPage({
           {booking.paidAt && (
             <div className="flex justify-between text-emerald-700">
               <span>Paid {dt(booking.paidAt)}</span>
-              <span>{isSitter ? "Payout on completion" : "Receipt on file"}</span>
+              <span>
+                {isSitter ? "Payout on completion" : "Receipt on file"}
+              </span>
             </div>
           )}
         </dl>
@@ -334,12 +338,15 @@ export default async function BookingPage({
               termsVersion={booking.waiverVersion}
               termsBody={terms.body}
               waiverOutstanding={!booking.waiverAcceptedAt}
+              addressOnFile={
+                addressComplete && fullAddress ? { line: fullAddress } : null
+              }
             />
             {booking.paymentMethod === "ETRANSFER" && (
               <p className="text-sm text-amber-800">
                 Waiting on your e-Transfer of {money(booking.totalAmount)} to{" "}
-                {settings.etransferEmail}. We&apos;ll confirm the booking as soon
-                as it arrives.
+                {settings.etransferEmail}. We&apos;ll confirm the booking as
+                soon as it arrives.
               </p>
             )}
             {/* Cancellation terms restated at the point of payment. */}
@@ -375,8 +382,8 @@ export default async function BookingPage({
               </ActionButton>
             ) : (
               <p className="text-sm text-amber-800">
-                The parent still has to accept the waiver before this booking can
-                be marked paid.
+                The parent still has to accept the waiver before this booking
+                can be marked paid.
               </p>
             )}
           </div>
@@ -462,8 +469,9 @@ export default async function BookingPage({
             </p>
             {booking.refundTier && booking.refundPercent !== null && (
               <p>
-                {REFUND_TIER_LABEL[booking.refundTier]} — {booking.refundPercent}
-                % refunded ({money(booking.refundAmount)})
+                {REFUND_TIER_LABEL[booking.refundTier]} —{" "}
+                {booking.refundPercent}% refunded ({money(booking.refundAmount)}
+                )
                 {booking.cancellationChargeAmount > 0
                   ? `, ${money(booking.cancellationChargeAmount)} retained`
                   : ""}
@@ -487,7 +495,10 @@ export default async function BookingPage({
         <Card className="space-y-3">
           <h2 className="font-semibold">Reviews</h2>
           {booking.reviews.map((r) => (
-            <div key={r.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+            <div
+              key={r.id}
+              className="rounded-lg bg-slate-50 px-3 py-2 text-sm"
+            >
               <p className="font-medium">
                 {"★".repeat(r.rating)}
                 {"☆".repeat(5 - r.rating)}
