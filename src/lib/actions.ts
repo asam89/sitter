@@ -20,6 +20,7 @@ import {
   storeChildMedical,
 } from "@/lib/child-medical";
 import { getActiveTerms } from "@/lib/terms";
+import { dt, time } from "@/lib/format";
 import { meetsLevel, LEVEL_LABEL } from "@/lib/verification";
 import { stripeEnabled, stripe } from "@/lib/stripe";
 import { notifyBookingEvent, type BookingEvent } from "@/lib/booking-notifications";
@@ -519,7 +520,24 @@ export async function updateReportStatus(
 
 // ---------- Parent: booking ----------
 
-export type BookingFormState = { error?: string };
+export type BookingFormState = {
+  error?: string;
+  // Admin manual bookings only: the sitter already has a block in that window.
+  // Not fatal — the admin can resubmit with confirmOverlap to book anyway, so
+  // we echo the entered values back to repopulate the form.
+  overlapWarning?: string;
+  values?: AdminBookingValues;
+};
+
+export type AdminBookingValues = {
+  parentId: string;
+  sitterProfileId: string;
+  startTime: string;
+  durationHours: string;
+  childrenAgeRange: string;
+  numberOfChildren: string;
+  notes: string;
+};
 
 export async function createBooking(
   _prevState: BookingFormState,
@@ -696,7 +714,7 @@ export async function adminCreateBooking(
     }),
     prisma.sitterProfile.findUnique({
       where: { id: d.sitterProfileId },
-      include: { user: { select: { suspended: true } } },
+      include: { user: { select: { suspended: true, name: true } } },
     }),
   ]);
   if (!parent || parent.role !== "PARENT" || parent.suspended) {
@@ -705,15 +723,35 @@ export async function adminCreateBooking(
   if (!profile || !profile.isListed || profile.user.suspended) {
     return { error: "That sitter isn't currently bookable." };
   }
-  const conflict = await prisma.availabilitySlot.findFirst({
-    where: {
-      sitterProfileId: profile.id,
-      startTime: { lt: end },
-      endTime: { gt: start },
-    },
-  });
-  if (conflict) {
-    return { error: "That window overlaps an existing block for this sitter." };
+  // An overlap is a warning, not a block: admins take these bookings by phone
+  // and often know the sitter's real availability better than the app does.
+  if (fd.get("confirmOverlap") !== "1") {
+    const conflict = await prisma.availabilitySlot.findFirst({
+      where: {
+        sitterProfileId: profile.id,
+        startTime: { lt: end },
+        endTime: { gt: start },
+      },
+      orderBy: { startTime: "asc" },
+    });
+    if (conflict) {
+      return {
+        overlapWarning:
+          `${profile.user.name} already has a ` +
+          `${conflict.status === "BOOKED" ? "booked" : "posted open"} block from ` +
+          `${dt(conflict.startTime)} to ${time(conflict.endTime)}. ` +
+          `Create it anyway only if you know she's free — the sitter still has to confirm.`,
+        values: {
+          parentId: d.parentId,
+          sitterProfileId: d.sitterProfileId,
+          startTime: d.startTime,
+          durationHours: String(d.durationHours),
+          childrenAgeRange: d.childrenAgeRange,
+          numberOfChildren: String(d.numberOfChildren),
+          notes: d.notes ?? "",
+        },
+      };
+    }
   }
 
   const terms = await getActiveTerms();
