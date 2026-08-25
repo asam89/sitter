@@ -156,10 +156,10 @@ export default async function PoliciesPage() {
         <p className="text-sm text-slate-600">
           Email{" "}
           <a
-            href={`mailto:${s.supportEmail ?? "support@riaya.ca"}`}
+            href={`mailto:${s.supportEmail ?? "info@riaya.ca"}`}
             className="underline"
           >
-            {s.supportEmail ?? "support@riaya.ca"}
+            {s.supportEmail ?? "info@riaya.ca"}
           </a>{" "}
           and we&apos;ll get back to you. Ready to start?{" "}
           <Link href="/signup" className="underline">

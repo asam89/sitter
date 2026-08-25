@@ -326,7 +326,7 @@ export default async function AdminSettingsPage() {
                 type="email"
                 name="etransferEmail"
                 defaultValue={s.etransferEmail ?? ""}
-                placeholder="payments@riaya.ca"
+                placeholder="info@riaya.ca"
                 className={input}
               />
             </label>
@@ -347,7 +347,7 @@ export default async function AdminSettingsPage() {
                 type="email"
                 name="supportEmail"
                 defaultValue={s.supportEmail ?? ""}
-                placeholder="support@riaya.ca"
+                placeholder="info@riaya.ca"
                 className={input}
               />
             </label>

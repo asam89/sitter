@@ -695,7 +695,7 @@ model BusinessSettings {
 
   // --- Support / reminders ---
   // Address quoted in reminders so both sides know who to contact.
-  supportEmail String? @default("support@riaya.ca")
+  supportEmail String? @default("info@riaya.ca")
   // Hours before the start at which each pre-session reminder goes out. 0
   // disables that reminder.
   reminderLeadHours      Int @default(24)

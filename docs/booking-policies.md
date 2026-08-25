@@ -76,7 +76,7 @@ refund is issued against the original payment intent.
 Both the parent and the sitter get a reminder before a **confirmed** (approved
 and paid) booking starts — `reminderLeadHours` (24h) and
 `reminderFinalLeadHours` (2h) ahead, either set to 0 to disable. Every reminder
-email names the support address (`supportEmail`, default `support@riaya.ca`,
+email names the support address (`supportEmail`, default `info@riaya.ca`,
 also shown in the site footer).
 
 Driven by `POST /api/maintenance/booking-reminders` (needs `MAINTENANCE_TOKEN`).
