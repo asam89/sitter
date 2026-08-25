@@ -26,6 +26,9 @@ export function AdminBookingForm({
   const [state, formAction] = useFormState(action, {});
   const input =
     "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
+  // Set when the sitter already has a block in that window: the entries come
+  // back so the admin only has to confirm rather than retype them.
+  const v = state?.values;
 
   return (
     <Card>
@@ -33,7 +36,12 @@ export function AdminBookingForm({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-medium">
             Parent
-            <select name="parentId" required defaultValue="" className={input}>
+            <select
+              name="parentId"
+              required
+              defaultValue={v?.parentId ?? ""}
+              className={input}
+            >
               <option value="" disabled>
                 Choose a parent…
               </option>
@@ -49,7 +57,7 @@ export function AdminBookingForm({
             <select
               name="sitterProfileId"
               required
-              defaultValue=""
+              defaultValue={v?.sitterProfileId ?? ""}
               className={input}
             >
               <option value="" disabled>
@@ -69,6 +77,7 @@ export function AdminBookingForm({
               name="startTime"
               required
               min={minStartTime}
+              defaultValue={v?.startTime}
               className={input}
             />
           </label>
@@ -80,7 +89,7 @@ export function AdminBookingForm({
               required
               min={minHours}
               max={12}
-              defaultValue={Math.max(minHours, 3)}
+              defaultValue={v?.durationHours ?? Math.max(minHours, 3)}
               className={input}
             />
           </label>
@@ -90,6 +99,7 @@ export function AdminBookingForm({
               name="childrenAgeRange"
               required
               placeholder="e.g. 2-5"
+              defaultValue={v?.childrenAgeRange}
               className={input}
             />
           </label>
@@ -101,14 +111,19 @@ export function AdminBookingForm({
               required
               min={1}
               max={10}
-              defaultValue={1}
+              defaultValue={v?.numberOfChildren ?? 1}
               className={input}
             />
           </label>
         </div>
         <label className="block text-sm font-medium">
           Notes for the sitter (optional)
-          <textarea name="notes" rows={2} className={input} />
+          <textarea
+            name="notes"
+            rows={2}
+            defaultValue={v?.notes}
+            className={input}
+          />
         </label>
 
         {state?.error && (
@@ -120,8 +135,22 @@ export function AdminBookingForm({
           </p>
         )}
 
+        {state?.overlapWarning && (
+          <p
+            role="alert"
+            className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          >
+            {state.overlapWarning}
+          </p>
+        )}
+
+        {state?.overlapWarning && (
+          <input type="hidden" name="confirmOverlap" value="1" />
+        )}
         <button type="submit" className={buttonClass()}>
-          Create booking request
+          {state?.overlapWarning
+            ? "Create booking anyway"
+            : "Create booking request"}
         </button>
       </form>
     </Card>
