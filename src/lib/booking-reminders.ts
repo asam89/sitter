@@ -19,11 +19,7 @@ import type { BusinessSettings } from "@prisma/client";
 export type ReminderKind = "FIRST" | "FINAL";
 
 export function supportEmail(settings: BusinessSettings): string {
-  return (
-    settings.supportEmail ||
-    process.env.EMAIL_REPLY_TO ||
-    "support@riaya.ca"
-  );
+  return settings.supportEmail || process.env.EMAIL_REPLY_TO || "info@riaya.ca";
 }
 
 function hoursUntil(start: Date, now: Date): number {
