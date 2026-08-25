@@ -116,3 +116,33 @@ own role or suspend yourself, the last active Admin cannot be demoted or
 suspended, and a role change is refused while the account still has bookings in
 flight. Every change is written to `AdminAuditLog` with the actor, and the last
 15 entries are shown on the page.
+
+### Admin-created accounts
+
+`/admin/users` can also create a parent or sitter for someone who signed up by
+phone or in person. No password is chosen for them: the account is created with
+an unusable random hash and an emailed set-password link (7-day, single-use,
+reusing the password-reset token table), so an Admin never handles someone
+else's credentials. A sitter created this way gets a vetted `SitterProfile` with
+the Admin-set rate but is **not** listed — listing stays a separate, deliberate
+click, and the sitter dashboard treats them as vetted despite having no
+application on file. Creation is audited (`create:PARENT` / `create:SITTER`),
+fires the usual new-signup Admin alert, and the invite can be re-sent from the
+list.
+
+## Waiver text and the public policies page
+
+The waiver/terms text is edited at `/admin/terms`. Saving never mutates an
+existing `TermsVersion`: each save inserts a new version and deactivates the
+previous one, because a booking stores the version it was accepted under
+(alongside the timestamp, IP and user-agent) and rewriting that row would
+silently change what a parent agreed to. Old versions stay readable on the page
+with the number of bookings that accepted each.
+
+`/policies` is the public, login-free page for the same rules. It renders live
+`BusinessSettings` values and the active waiver text — minimum session length,
+itemised fees, the payment options, the refund tiers (via
+`refundPolicyLines()`), the intro call, the medical-data notice and the support
+address — so it cannot drift from what the booking flow actually charges. The
+waiver and the medical-data retention wording are still labelled
+`[PENDING LEGAL REVIEW]`.

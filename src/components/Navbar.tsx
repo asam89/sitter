@@ -33,6 +33,12 @@ export async function Navbar() {
           >
             Our team
           </Link>
+          <Link
+            href="/policies"
+            className="hidden font-medium text-brand-teal hover:text-brand-coral sm:inline"
+          >
+            Policies
+          </Link>
           {session?.user ? (
             <>
               <Link

@@ -5,8 +5,11 @@ import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
 import { dt } from "@/lib/format";
 import { LEVEL_LABEL } from "@/lib/verification";
 import { adminAlertRecipients } from "@/lib/admin-notifications";
+import { adminCreateUser } from "@/lib/user-admin-actions";
 import { RoleForm } from "./RoleForm";
 import { UserSuspendButton } from "./UserSuspendButton";
+import { NewUserForm } from "./NewUserForm";
+import { InviteButton } from "./InviteButton";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +25,12 @@ const ROLE_COLOR = {
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: { q?: string; role?: string };
+  searchParams: {
+    q?: string;
+    role?: string;
+    invited?: string;
+    resent?: string;
+  };
 }) {
   const me = await requireRole("ADMIN");
   const q = searchParams.q?.trim() ?? "";
@@ -68,6 +76,28 @@ export default async function AdminUsersPage({
         title="User accounts"
         subtitle="See every account, change roles, and grant or remove Admin access."
       />
+
+      {searchParams.invited === "1" && (
+        <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+          Account created. We emailed them a link to set their own password —
+          they can&apos;t sign in until they use it.
+        </p>
+      )}
+      {searchParams.resent === "1" && (
+        <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+          Set-password email sent. Any earlier link they were sent no longer
+          works.
+        </p>
+      )}
+
+      <details>
+        <summary className="cursor-pointer text-sm font-medium">
+          Add a parent or sitter account
+        </summary>
+        <div className="mt-3">
+          <NewUserForm action={adminCreateUser} />
+        </div>
+      </details>
 
       <Card className="space-y-1">
         <p className="text-sm font-medium">
@@ -132,7 +162,8 @@ export default async function AdminUsersPage({
                   </p>
                   <p className="text-sm text-slate-600">{u.email}</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    Joined {dt(u.createdAt)} · {LEVEL_LABEL[u.verificationLevel]}
+                    Joined {dt(u.createdAt)} ·{" "}
+                    {LEVEL_LABEL[u.verificationLevel]}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -142,9 +173,12 @@ export default async function AdminUsersPage({
               </div>
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <RoleForm userId={u.id} role={u.role} isSelf={u.id === me.id} />
-                {u.id !== me.id && (
-                  <UserSuspendButton userId={u.id} suspended={u.suspended} />
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {u.role !== "ADMIN" && <InviteButton userId={u.id} />}
+                  {u.id !== me.id && (
+                    <UserSuspendButton userId={u.id} suspended={u.suspended} />
+                  )}
+                </div>
               </div>
             </Card>
           ))}
@@ -158,8 +192,8 @@ export default async function AdminUsersPage({
         ) : (
           audit.map((a) => (
             <p key={a.id} className="text-xs text-slate-600">
-              {dt(a.createdAt)} — {a.actor.name} set{" "}
-              <strong>{a.action}</strong> on {a.target.name} ({a.target.email})
+              {dt(a.createdAt)} — {a.actor.name} set <strong>{a.action}</strong>{" "}
+              on {a.target.name} ({a.target.email})
             </p>
           ))
         )}

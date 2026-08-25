@@ -140,6 +140,9 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/settings" variant="secondary">
             Business rules
           </ButtonLink>
+          <ButtonLink href="/admin/terms" variant="secondary">
+            Waiver &amp; terms
+          </ButtonLink>
         </div>
       </div>
 

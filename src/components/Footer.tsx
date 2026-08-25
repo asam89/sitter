@@ -39,6 +39,9 @@ export async function Footer() {
           <Link href="/team" className="hover:text-brand-coral">
             Our team
           </Link>
+          <Link href="/policies" className="hover:text-brand-coral">
+            Policies &amp; terms
+          </Link>
           <Link href="/login" className="hover:text-brand-coral">
             Log in
           </Link>
