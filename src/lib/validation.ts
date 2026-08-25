@@ -186,6 +186,14 @@ export const settingsSchema = z.object({
     .trim()
     .email("Enter a valid e-Transfer email, or leave it blank.")
     .or(z.literal("")),
+  supportEmail: z
+    .string()
+    .trim()
+    .email("Enter a valid support email, or leave it blank.")
+    .or(z.literal("")),
+  // 0 disables that reminder.
+  reminderLeadHours: z.coerce.number().int().min(0).max(168),
+  reminderFinalLeadHours: z.coerce.number().int().min(0).max(168),
 });
 
 // A sitter pricing their own time. The Admin-set rate stays as the fallback.

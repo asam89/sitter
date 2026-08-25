@@ -488,12 +488,16 @@ export async function updateSettings(fd: FormData) {
     afterStartRefundPercent: s(fd, "afterStartRefundPercent"),
     sitterCancelRefundPercent: s(fd, "sitterCancelRefundPercent"),
     etransferEmail: s(fd, "etransferEmail"),
+    supportEmail: s(fd, "supportEmail"),
+    reminderLeadHours: s(fd, "reminderLeadHours"),
+    reminderFinalLeadHours: s(fd, "reminderFinalLeadHours"),
   });
   if (!parsed.success) throw new Error("Invalid settings");
-  const { etransferEmail, ...rest } = parsed.data;
+  const { etransferEmail, supportEmail, ...rest } = parsed.data;
   await updateBusinessSettings({
     ...rest,
     etransferEmail: etransferEmail || null,
+    supportEmail: supportEmail || null,
   });
   revalidatePath("/admin/settings");
 }

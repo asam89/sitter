@@ -24,7 +24,7 @@ type Channel = "EMAIL" | "SMS" | "WHATSAPP";
 
 // Notifications are read outside the app (inbox, texts), so booking links have
 // to be absolute.
-function appUrl(path: string): string {
+export function appUrl(path: string): string {
   const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(/\/$/, "");
   return `${base}${path}`;
 }
@@ -36,7 +36,7 @@ export type BookingEvent =
   | "CANCELLED"
   | "COMPLETED";
 
-type Recipient = {
+export type Recipient = {
   userId: string;
   email: string | null;
   phone: string | null;
@@ -173,9 +173,42 @@ async function dispatchOne(
   }
 }
 
-// Fan out a booking event to one recipient across all enabled channels and
+// Fan out one prepared message to a recipient across every enabled channel and
 // record each attempt. Never throws — notification failure must not break the
-// booking transaction that triggered it.
+// booking transaction that triggered it. `emailSuffix` is appended to the email
+// body only, so texts stay terse.
+export async function deliverBookingMessage(opts: {
+  bookingId: string;
+  settings: BusinessSettings;
+  recipient: Recipient;
+  message: NotificationMessage;
+  emailSuffix?: string;
+}): Promise<void> {
+  for (const channel of enabledChannels(opts.settings)) {
+    const to = channel === "EMAIL" ? opts.recipient.email : opts.recipient.phone;
+    const result = await dispatchOne(
+      channel,
+      to,
+      channel === "EMAIL" && opts.emailSuffix
+        ? { ...opts.message, body: `${opts.message.body}${opts.emailSuffix}` }
+        : opts.message,
+    );
+    try {
+      await prisma.notification.create({
+        data: {
+          bookingId: opts.bookingId,
+          recipientUserId: opts.recipient.userId,
+          channel,
+          status: result.status,
+          detail: result.detail,
+        },
+      });
+    } catch {
+      // Auditing is best-effort; swallow so it can never break the caller.
+    }
+  }
+}
+
 export async function notifyBookingEvent(
   event: BookingEvent,
   opts: {
@@ -210,27 +243,11 @@ export async function notifyBookingEvent(
       ? await newsletterInvite(opts.recipient.userId)
       : "";
 
-  for (const channel of enabledChannels(opts.settings)) {
-    const to = channel === "EMAIL" ? opts.recipient.email : opts.recipient.phone;
-    const result = await dispatchOne(
-      channel,
-      to,
-      channel === "EMAIL" && invite
-        ? { ...msg, body: `${msg.body}${invite}` }
-        : msg,
-    );
-    try {
-      await prisma.notification.create({
-        data: {
-          bookingId: opts.bookingId,
-          recipientUserId: opts.recipient.userId,
-          channel,
-          status: result.status,
-          detail: result.detail,
-        },
-      });
-    } catch {
-      // Auditing is best-effort; swallow so it can never break the caller.
-    }
-  }
+  await deliverBookingMessage({
+    bookingId: opts.bookingId,
+    settings: opts.settings,
+    recipient: opts.recipient,
+    message: msg,
+    emailSuffix: invite,
+  });
 }

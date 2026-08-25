@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { NewsletterSignup } from "@/components/NewsletterSignup";
+import { getBusinessSettings } from "@/lib/settings";
+import { supportEmail } from "@/lib/booking-reminders";
 
-export function Footer() {
+export async function Footer() {
+  const support = supportEmail(await getBusinessSettings());
   return (
     <footer className="mt-12 border-t border-brand-teal/15 bg-white">
       <div className="mx-auto w-full max-w-5xl border-b border-brand-teal/10 px-4 py-6">
@@ -42,6 +45,9 @@ export function Footer() {
           <Link href="/signup" className="hover:text-brand-coral">
             Sign up
           </Link>
+          <a href={`mailto:${support}`} className="hover:text-brand-coral">
+            {support}
+          </a>
           <span className="text-brand-teal-light">
             © {new Date().getFullYear()} Ri&apos;aya Babysitters Inc.
           </span>
