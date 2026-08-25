@@ -42,16 +42,16 @@ This is health data about minors, so:
   (run it daily; it needs `MAINTENANCE_TOKEN`);
 - shown with a collection notice at the point of entry.
 
-**The retention window and the notice wording still need privacy/legal review
-before real families use this.**
+The retention window is a product decision (`MEDICAL_RETENTION_DAYS`), not a
+legal opinion; confirm it against PHIPA/PIPEDA if that ever matters.
 
 ## Waiver and terms
 
 Each booking stores the waiver version, acceptance timestamp, IP and
-user-agent. The current waiver text is labelled `[PENDING LEGAL REVIEW]`: a
-blanket "no responsibility" clause in childcare is commonly unenforceable, and
-nothing here has been reviewed by a lawyer. Get counsel and consider liability
-insurance before launch.
+user-agent. The shipped waiver text (`v1`) has not been reviewed by a lawyer: a
+blanket "no responsibility" clause in childcare is commonly unenforceable, so
+counsel and liability insurance are still worth having. Replacing the text at
+`/admin/terms` needs no deploy.
 
 ## Cancellation and refunds
 
@@ -143,6 +143,4 @@ with the number of bookings that accepted each.
 `BusinessSettings` values and the active waiver text — minimum session length,
 itemised fees, the payment options, the refund tiers (via
 `refundPolicyLines()`), the intro call, the medical-data notice and the support
-address — so it cannot drift from what the booking flow actually charges. The
-waiver and the medical-data retention wording are still labelled
-`[PENDING LEGAL REVIEW]`.
+address — so it cannot drift from what the booking flow actually charges.

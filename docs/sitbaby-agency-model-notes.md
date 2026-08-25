@@ -69,9 +69,9 @@ The rush fee is always shown as its own line item before the parent confirms.
   created; the booking records `waiverVersion` + `waiverAcceptedAt`.
 - Terms are versioned in `TermsVersion`; the active version's full text is shown
   in the booking flow.
-- **The seeded terms are placeholder copy explicitly marked
-  `[PENDING LEGAL REVIEW]` and MUST be replaced with lawyer-drafted language
-  before launch.** The copy states Sitbaby vets/lists sitters but sitters are
+- The seeded terms (`v1`) are ours, not lawyer-drafted; an Admin can replace the
+  text at `/admin/terms` without a deploy. The copy states Sitbaby vets/lists
+  sitters but sitters are
   **independent contractors, not employees or agents** of Sitbaby.
 - Either party can file a booking-scoped incident report, which lands in the
   Admin reports queue.
