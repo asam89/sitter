@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useFormState } from "react-dom";
 import { Card, buttonClass } from "@/components/ui";
 import { ChildMedicalFields } from "@/components/ChildMedicalFields";
+import { ServiceAddressFields } from "@/components/ServiceAddressFields";
 import type { RequestFormState } from "@/lib/actions";
 
 export function RequestForm({
@@ -12,15 +13,14 @@ export function RequestForm({
   termsBody,
   minStartTime,
   minHours,
+  addressOnFile,
 }: {
-  action: (
-    state: RequestFormState,
-    fd: FormData,
-  ) => Promise<RequestFormState>;
+  action: (state: RequestFormState, fd: FormData) => Promise<RequestFormState>;
   termsVersion: string;
   termsBody: string;
   minStartTime: string;
   minHours: number;
+  addressOnFile: { line: string } | null;
 }) {
   const [accepted, setAccepted] = useState(false);
   const [children, setChildren] = useState(1);
@@ -86,6 +86,8 @@ export function RequestForm({
           once a sitter picks up your request. Health details below stay
           encrypted until then.
         </p>
+
+        <ServiceAddressFields onFile={addressOnFile} />
 
         <ChildMedicalFields count={children} />
 

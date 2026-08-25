@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { getParentBookingEligibility } from "@/lib/verification";
+import {
+  getParentBookingEligibility,
+  getServiceAddressOnFile,
+} from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
 import { createBookingRequest } from "@/lib/actions";
@@ -28,9 +31,10 @@ export default async function NewRequestPage() {
   const eligibility = await getParentBookingEligibility(user.id);
   if (!eligibility.canBook) redirect("/parent/verify");
 
-  const [settings, terms, rates] = await Promise.all([
+  const [settings, terms, addressOnFile, rates] = await Promise.all([
     getBusinessSettings(),
     getActiveTerms(),
+    getServiceAddressOnFile(user.id),
     prisma.sitterProfile.findMany({
       where: { isListed: true, user: { suspended: false } },
       select: { baseRate: true, listedPayRate: true },
@@ -67,8 +71,7 @@ export default async function NewRequestPage() {
             ? "Each sitter sets their own rate, so your total is confirmed once a sitter picks up your request."
             : minRate === maxRate
               ? `Sitters' rates are ${moneyHr(minRate)}; your itemised total (plus Ri'aya's fee) is confirmed once a sitter picks up your request.`
-              : `Sitters' rates currently range ${moneyHr(minRate)}–${moneyHr(maxRate)}; your itemised total (plus Ri'aya's fee) is confirmed once one picks up your request.`}
-          {" "}
+              : `Sitters' rates currently range ${moneyHr(minRate)}–${moneyHr(maxRate)}; your itemised total (plus Ri'aya's fee) is confirmed once one picks up your request.`}{" "}
           Requests starting within {settings.lastMinuteThresholdHours}h also
           carry the last-minute rush fee, and bookings are a minimum of{" "}
           {settings.minBookingHours} hours.
@@ -90,6 +93,7 @@ export default async function NewRequestPage() {
         termsBody={terms.body}
         minStartTime={localInputValue(new Date())}
         minHours={settings.minBookingHours}
+        addressOnFile={addressOnFile}
       />
     </div>
   );

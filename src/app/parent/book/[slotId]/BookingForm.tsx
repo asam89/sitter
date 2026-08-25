@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useFormState } from "react-dom";
 import { Card, buttonClass } from "@/components/ui";
 import { ChildMedicalFields } from "@/components/ChildMedicalFields";
+import { ServiceAddressFields } from "@/components/ServiceAddressFields";
 import type { BookingFormState } from "@/lib/actions";
 
 export function BookingForm({
@@ -11,14 +12,13 @@ export function BookingForm({
   action,
   termsVersion,
   termsBody,
+  addressOnFile,
 }: {
   slotId: string;
-  action: (
-    state: BookingFormState,
-    fd: FormData,
-  ) => Promise<BookingFormState>;
+  action: (state: BookingFormState, fd: FormData) => Promise<BookingFormState>;
   termsVersion: string;
   termsBody: string;
+  addressOnFile: { line: string } | null;
 }) {
   const [accepted, setAccepted] = useState(false);
   const [children, setChildren] = useState(1);
@@ -63,6 +63,8 @@ export function BookingForm({
           A name is only needed if you choose to give one below.
         </p>
 
+        <ServiceAddressFields onFile={addressOnFile} />
+
         <ChildMedicalFields count={children} />
 
         {/* Liability waiver click-through — version + timestamp recorded. */}
@@ -97,11 +99,7 @@ export function BookingForm({
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={!accepted}
-          className={buttonClass()}
-        >
+        <button type="submit" disabled={!accepted} className={buttonClass()}>
           Confirm booking
         </button>
       </form>

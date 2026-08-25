@@ -2,6 +2,7 @@ import type { ParentProfile, User, VerificationLevel } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getBusinessSettings } from "@/lib/settings";
+import { serviceAddressSchema } from "@/lib/validation";
 
 export const CODE_TTL_MINUTES = 10;
 
@@ -34,8 +35,8 @@ export function hasServiceAddress(
 ): boolean {
   return Boolean(
     profile.streetAddress?.trim() &&
-      profile.postalCode?.trim() &&
-      profile.province?.trim(),
+    profile.postalCode?.trim() &&
+    profile.province?.trim(),
   );
 }
 
@@ -43,12 +44,10 @@ export function hasServiceAddress(
 // stored `verificationLevel` can never drift from reality.
 export function deriveLevel(
   user: Pick<User, "emailVerified" | "phoneVerified">,
-  profile:
-    | Pick<
-        ParentProfile,
-        "identityVerified" | "streetAddress" | "postalCode" | "province"
-      >
-    | null,
+  profile: Pick<
+    ParentProfile,
+    "identityVerified" | "streetAddress" | "postalCode" | "province"
+  > | null,
 ): VerificationLevel {
   const contactVerified = Boolean(user.emailVerified) && user.phoneVerified;
   if (!contactVerified) return "LEVEL_0_REGISTERED";
@@ -57,6 +56,93 @@ export function deriveLevel(
     !!profile &&
     hasServiceAddress(profile);
   return identityDone ? "LEVEL_2_IDENTITY" : "LEVEL_1_CONTACT";
+}
+
+// Every booking needs somewhere for the sitter to go, but the address is
+// collected during KYC and is only mandatory at LEVEL_2 — so a parent booking
+// at a lower gate may have none on file. Booking flows call this to take the
+// address with the booking and keep it for next time.
+export async function ensureServiceAddress(
+  userId: string,
+  fd: FormData,
+): Promise<{ ok: true; city: string | null } | { ok: false; error: string }> {
+  const profile = await prisma.parentProfile.findUnique({
+    where: { userId },
+    select: {
+      streetAddress: true,
+      postalCode: true,
+      province: true,
+      city: true,
+    },
+  });
+  if (profile && hasServiceAddress(profile)) {
+    return { ok: true, city: profile.city };
+  }
+
+  const parsed = serviceAddressSchema.safeParse({
+    streetAddress: field(fd, "streetAddress"),
+    unit: field(fd, "unit"),
+    city: field(fd, "city"),
+    province: field(fd, "province"),
+    postalCode: field(fd, "postalCode"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error:
+        parsed.error.issues[0]?.message ??
+        "Add the address where the sitter is needed.",
+    };
+  }
+  const d = parsed.data;
+  const address = {
+    streetAddress: d.streetAddress,
+    unit: d.unit || null,
+    city: d.city,
+    province: d.province,
+    postalCode: d.postalCode,
+  };
+  await prisma.parentProfile.upsert({
+    where: { userId },
+    create: { userId, ...address },
+    update: address,
+  });
+  await recomputeVerificationLevel(userId);
+  return { ok: true, city: d.city };
+}
+
+// One-line service address for the booking forms, or null when the parent has
+// none on file yet and must enter it with the booking.
+export async function getServiceAddressOnFile(
+  userId: string,
+): Promise<{ line: string } | null> {
+  const profile = await prisma.parentProfile.findUnique({
+    where: { userId },
+    select: {
+      streetAddress: true,
+      unit: true,
+      city: true,
+      province: true,
+      postalCode: true,
+    },
+  });
+  if (!profile || !hasServiceAddress(profile)) return null;
+  return {
+    line: [
+      profile.streetAddress,
+      profile.unit ? `Unit ${profile.unit}` : null,
+      profile.city,
+      profile.province,
+      profile.postalCode,
+    ]
+      .filter(Boolean)
+      .join(", "),
+  };
+}
+
+function field(fd: FormData, key: string): string {
+  const v = fd.get(key);
+  return typeof v === "string" ? v : "";
 }
 
 // Recomputes and persists a user's verificationLevel after any verification
