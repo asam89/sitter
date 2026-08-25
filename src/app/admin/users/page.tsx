@@ -25,7 +25,12 @@ const ROLE_COLOR = {
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: { q?: string; role?: string; invited?: string };
+  searchParams: {
+    q?: string;
+    role?: string;
+    invited?: string;
+    resent?: string;
+  };
 }) {
   const me = await requireRole("ADMIN");
   const q = searchParams.q?.trim() ?? "";
@@ -76,6 +81,12 @@ export default async function AdminUsersPage({
         <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
           Account created. We emailed them a link to set their own password —
           they can&apos;t sign in until they use it.
+        </p>
+      )}
+      {searchParams.resent === "1" && (
+        <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+          Set-password email sent. Any earlier link they were sent no longer
+          works.
         </p>
       )}
 

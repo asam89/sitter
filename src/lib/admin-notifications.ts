@@ -24,7 +24,10 @@ import { bookingRef, dt, money, requestRef } from "@/lib/format";
 type AdminAlert = "SIGNUP" | "APPLICATION" | "BOOKING" | "REQUEST";
 
 function appUrl(path: string): string {
-  const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(/\/$/, "");
+  const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(
+    /\/$/,
+    "",
+  );
   return `${base}${path}`;
 }
 
@@ -138,6 +141,9 @@ export async function notifyAdminsOfSignup(u: {
   role: string;
   phone: string | null;
   city?: string | null;
+  // Created by an Admin rather than self-signup: a sitter made this way is
+  // already vetted, so don't tell Admins to wait for an application.
+  adminCreated?: boolean;
 }): Promise<void> {
   const kind = u.role === "SITTER" ? "babysitter" : u.role.toLowerCase();
   await alertAdmins(
@@ -149,10 +155,13 @@ export async function notifyAdminsOfSignup(u: {
       `Phone: ${u.phone ?? "—"}\n` +
       (u.city ? `City: ${u.city}\n` : "") +
       `Signed up: ${dt(new Date())}\n\n` +
-      (u.role === "SITTER"
-        ? `They still need to submit a vetting application — you'll get another ` +
-          `alert when they do: ${appUrl("/admin/applications")}`
-        : `Parent accounts: ${appUrl("/admin/parents")}`),
+      (u.role !== "SITTER"
+        ? `Parent accounts: ${appUrl("/admin/parents")}`
+        : u.adminCreated
+          ? `Created by an Admin, so they're already vetted and skip the ` +
+            `application. They stay unlisted until you list them: ${appUrl("/admin")}`
+          : `They still need to submit a vetting application — you'll get another ` +
+            `alert when they do: ${appUrl("/admin/applications")}`),
   );
 }
 

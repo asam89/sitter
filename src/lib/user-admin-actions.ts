@@ -186,6 +186,7 @@ export async function adminCreateUser(
     role: user.role,
     phone: user.phone,
     city: city || null,
+    adminCreated: true,
   });
 
   revalidatePath("/admin/users");
@@ -207,6 +208,7 @@ export async function resendAccountInvite(userId: string) {
     role: target.role === "SITTER" ? "SITTER" : "PARENT",
   });
   revalidatePath("/admin/users");
+  redirect(`/admin/users?q=${encodeURIComponent(target.email)}&resent=1`);
 }
 
 export async function setUserSuspendedAudited(
