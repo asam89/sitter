@@ -51,6 +51,7 @@ export default async function BookingPage({
         select: {
           id: true,
           name: true,
+          email: true,
           phone: true,
           parentProfile: {
             select: {
@@ -97,6 +98,9 @@ export default async function BookingPage({
   const addressComplete = !!addr && hasServiceAddress(addr);
   const showServiceAddress =
     !!addr && (isParent || isAdmin || (isSitter && addressUnlocked));
+  // The sitter needs to reach the family directly once they own the booking —
+  // same release point as the address.
+  const showParentContact = isAdmin || (isSitter && addressUnlocked);
   const fullAddress = addr
     ? [
         addr.streetAddress,
@@ -184,6 +188,49 @@ export default async function BookingPage({
               booking.
             </p>
           )}
+        </Card>
+      )}
+
+      {showParentContact && (
+        <Card>
+          <h2 className="font-semibold">Parent contact</h2>
+          <dl className="mt-2 grid grid-cols-2 gap-y-2 text-sm">
+            <dt className="text-slate-500">Name</dt>
+            <dd>{booking.parent.name}</dd>
+            <dt className="text-slate-500">Phone</dt>
+            <dd>
+              {booking.parent.phone ? (
+                <a href={`tel:${booking.parent.phone}`} className="underline">
+                  {booking.parent.phone}
+                </a>
+              ) : (
+                <span className="text-slate-500">Not provided</span>
+              )}
+            </dd>
+            <dt className="text-slate-500">Email</dt>
+            <dd>
+              <a href={`mailto:${booking.parent.email}`} className="underline">
+                {booking.parent.email}
+              </a>
+            </dd>
+          </dl>
+          {isSitter && (
+            <p className="mt-2 text-xs text-slate-500">
+              Shared with you because you approved this booking. Use it for this
+              booking only.
+            </p>
+          )}
+          {isSitter &&
+            !booking.waiverAcceptedAt &&
+            !["CANCELLED", "DECLINED", "COMPLETED"].includes(
+              booking.status,
+            ) && (
+              <p className="mt-2 text-sm text-amber-700">
+                {booking.parent.name} hasn&apos;t accepted the waiver yet — the
+                booking is only confirmed once they accept it and pay. A quick
+                call or email helps.
+              </p>
+            )}
         </Card>
       )}
 
