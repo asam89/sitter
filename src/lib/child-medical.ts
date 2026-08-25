@@ -21,7 +21,9 @@ function encryptionKey(): Buffer {
       ? Buffer.from(configured, "hex")
       : Buffer.from(configured, "base64");
     if (buf.length !== 32) {
-      throw new Error("MEDICAL_ENCRYPTION_KEY must be 32 bytes (hex or base64)");
+      throw new Error(
+        "MEDICAL_ENCRYPTION_KEY must be 32 bytes (hex or base64)",
+      );
     }
     return buf;
   }
@@ -96,8 +98,8 @@ export function parseChildMedical(fd: FormData): ChildMedical[] {
 }
 
 // Retention: health data is kept only as long as it is operationally useful,
-// then purged. PENDING PRIVACY REVIEW — confirm the window with counsel before
-// launch (PHIPA/PIPEDA retention limits).
+// then purged. The window is a product decision, not a legal opinion (PHIPA/
+// PIPEDA set the outer limits).
 export const MEDICAL_RETENTION_DAYS = 60;
 
 function purgeDate(sessionStart: Date): Date {

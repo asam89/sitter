@@ -137,9 +137,7 @@ export default async function PoliciesPage() {
         <p className="text-sm text-slate-600">
           Allergy and medical notes you add to a booking are stored encrypted,
           are released to the sitter only once the booking is confirmed, and are
-          deleted after the session. Nobody else can read them.{" "}
-          <strong>[PENDING LEGAL REVIEW]</strong> — our retention and privacy
-          wording is still with counsel.
+          deleted after the session. Nobody else can read them.
         </p>
       </Section>
 

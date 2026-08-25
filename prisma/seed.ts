@@ -1,24 +1,24 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { PLACEHOLDER_TERMS_BODY, PLACEHOLDER_TERMS_VERSION } from "../src/lib/terms";
+import { DEFAULT_TERMS_BODY, DEFAULT_TERMS_VERSION } from "../src/lib/terms";
 
 const prisma = new PrismaClient();
 
 async function main() {
   const pw = await bcrypt.hash("password123", 10);
 
-  // Business settings singleton + active placeholder terms.
+  // Business settings singleton + active terms.
   await prisma.businessSettings.upsert({
     where: { id: "singleton" },
     update: {},
     create: { id: "singleton" },
   });
   await prisma.termsVersion.upsert({
-    where: { version: PLACEHOLDER_TERMS_VERSION },
+    where: { version: DEFAULT_TERMS_VERSION },
     update: { active: true },
     create: {
-      version: PLACEHOLDER_TERMS_VERSION,
-      body: PLACEHOLDER_TERMS_BODY,
+      version: DEFAULT_TERMS_VERSION,
+      body: DEFAULT_TERMS_BODY,
       active: true,
     },
   });
