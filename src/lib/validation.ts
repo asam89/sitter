@@ -16,6 +16,42 @@ export const registerSchema = z
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 
+// An Admin creating an account for someone who signed up by phone or in person.
+// No password field: the invitee sets their own through the emailed link.
+export const adminCreateUserSchema = z.object({
+  name: z.string().trim().min(2, "Enter their name.").max(120),
+  email: z.string().trim().email("Enter a valid email address."),
+  role: z.enum(["PARENT", "SITTER"]),
+  phone: z.string().trim().max(40).optional().or(z.literal("")),
+  city: z.string().trim().max(120).optional().or(z.literal("")),
+  // Sitters only: the Admin-set hourly rate the profile starts on.
+  listedPayRate: z.coerce
+    .number()
+    .int()
+    .min(1, "Set the sitter's hourly rate.")
+    .max(500, "That rate looks too high — check it.")
+    .optional(),
+});
+
+// Publishing waiver/terms text. The version label is how acceptances are
+// traced, so it has to be short, unique and human-readable.
+export const termsPublishSchema = z.object({
+  version: z
+    .string()
+    .trim()
+    .min(1, "Give the version a label, e.g. v1.")
+    .max(40)
+    .regex(
+      /^[A-Za-z0-9._-]+$/,
+      "Use letters, numbers, dots, dashes or underscores only.",
+    ),
+  body: z
+    .string()
+    .trim()
+    .min(50, "The waiver text looks too short — paste the full text.")
+    .max(40000),
+});
+
 export const passwordResetRequestSchema = z
   .object({
     email: z.string().email(),

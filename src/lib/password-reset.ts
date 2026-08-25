@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getEmailProvider } from "@/lib/notifications";
 
 export const RESET_TOKEN_TTL_MINUTES = 60;
+// An invited account can't be used at all until the token is redeemed, so the
+// window is generous — a one-hour link would strand anyone who isn't at their
+// inbox when an Admin creates the account.
+export const INVITE_TOKEN_TTL_MINUTES = 7 * 24 * 60;
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -17,6 +21,54 @@ function resetUrl(token: string): string {
   return `${base}/reset-password?token=${token}`;
 }
 
+// Issues a single outstanding token for a user, invalidating any earlier one.
+async function issueToken(
+  userId: string,
+  ttlMinutes: number,
+): Promise<string> {
+  await prisma.passwordResetToken.deleteMany({ where: { userId } });
+  const token = randomBytes(32).toString("hex");
+  await prisma.passwordResetToken.create({
+    data: {
+      userId,
+      tokenHash: hashToken(token),
+      expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
+    },
+  });
+  return token;
+}
+
+// Invitation for an account an Admin created on someone's behalf. The same
+// single-use token mechanism as a reset: no password is ever chosen for them, so
+// the account is unusable until they set their own.
+export async function sendAccountSetupInvite(user: {
+  id: string;
+  email: string;
+  name: string;
+  role: "PARENT" | "SITTER";
+}): Promise<void> {
+  const link = resetUrl(await issueToken(user.id, INVITE_TOKEN_TTL_MINUTES));
+  const next =
+    user.role === "SITTER"
+      ? "Once you're in, add your availability so families can book you."
+      : "Once you're in, you can see your bookings and book a sitter yourself.";
+  await getEmailProvider().sendMessage(user.email, {
+    subject: "Set your Ri'aya password",
+    body: [
+      `Hi ${user.name},`,
+      "",
+      "Ri'aya Babysitters has set up an account for you. Choose a password to",
+      `activate it (link valid for ${INVITE_TOKEN_TTL_MINUTES / (24 * 60)} days):`,
+      link,
+      "",
+      next,
+      "",
+      "If you weren't expecting this, you can ignore this email — the account",
+      "can't be used until a password is set.",
+    ].join("\n"),
+  });
+}
+
 // Creates a reset token for the account with `email` (if one exists) and emails
 // the reset link. Callers must NOT reveal whether the email matched an account.
 export async function requestPasswordReset(email: string): Promise<void> {
@@ -25,16 +77,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
   });
   if (!user) return; // silently no-op to avoid account enumeration
 
-  // Invalidate any outstanding tokens for this user before issuing a new one.
-  await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
-
-  const token = randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60_000);
-  await prisma.passwordResetToken.create({
-    data: { userId: user.id, tokenHash: hashToken(token), expiresAt },
-  });
-
-  const link = resetUrl(token);
+  const link = resetUrl(await issueToken(user.id, RESET_TOKEN_TTL_MINUTES));
   await getEmailProvider().sendMessage(user.email, {
     subject: "Reset your Ri'aya password",
     body: [

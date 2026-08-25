@@ -52,56 +52,61 @@ export default async function SitterDashboard() {
       <PageTitle title={`Hi, ${user.name}`} subtitle="Your sitter dashboard." />
 
       {/* Vetting / listing status */}
-      {!application ? (
-        <Card>
-          <h2 className="font-semibold">Get vetted to start sitting</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Every Ri&apos;aya sitter is manually vetted by our team before they can
-            be listed and booked.
-          </p>
-          <div className="mt-3">
-            <ButtonLink href="/sitter/apply">Start application</ButtonLink>
-          </div>
-        </Card>
-      ) : !profile ? (
-        <Card>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Application status</h2>
-            <Badge color={APPLICATION_STATUS_COLOR[application.status]}>
-              {application.status.replace("_", " ")}
-            </Badge>
-          </div>
-          <p className="mt-2 text-sm text-slate-600">
-            Your requested rate: {moneyHr(application.targetPayRate)}.
-          </p>
-          {application.status === "REJECTED" ? (
-            <>
-              {application.adminNotes && (
-                <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
-                  {application.adminNotes}
-                </p>
-              )}
-              <div className="mt-3">
-                <ButtonLink href="/sitter/apply" variant="secondary">
-                  Update &amp; re-apply
-                </ButtonLink>
-              </div>
-            </>
-          ) : application.status === "INTERVIEW" ? (
-            <p className="mt-2 rounded-lg bg-brand-cream px-3 py-2 text-sm text-brand-teal">
-              Our team would like to interview you
-              {application.interviewScheduledAt
-                ? ` on ${dt(application.interviewScheduledAt)}.`
-                : ". We\u2019ll reach out to arrange a time."}{" "}
-              This is the final step before we vet and list you.
+      {/* A sitter created by an Admin is already vetted and has a profile but
+          never filled in an application, so the profile wins over its absence. */}
+      {!profile ? (
+        !application ? (
+          <Card>
+            <h2 className="font-semibold">Get vetted to start sitting</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Every Ri&apos;aya sitter is manually vetted by our team before
+              they can be listed and booked.
             </p>
-          ) : (
-            <p className="mt-2 text-sm text-slate-500">
-              We&apos;ll email you once our team has reviewed your application.
-              Vetting includes a short interview with our reviewers.
+            <div className="mt-3">
+              <ButtonLink href="/sitter/apply">Start application</ButtonLink>
+            </div>
+          </Card>
+        ) : (
+          <Card>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">Application status</h2>
+              <Badge color={APPLICATION_STATUS_COLOR[application.status]}>
+                {application.status.replace("_", " ")}
+              </Badge>
+            </div>
+            <p className="mt-2 text-sm text-slate-600">
+              Your requested rate: {moneyHr(application.targetPayRate)}.
             </p>
-          )}
-        </Card>
+            {application.status === "REJECTED" ? (
+              <>
+                {application.adminNotes && (
+                  <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                    {application.adminNotes}
+                  </p>
+                )}
+                <div className="mt-3">
+                  <ButtonLink href="/sitter/apply" variant="secondary">
+                    Update &amp; re-apply
+                  </ButtonLink>
+                </div>
+              </>
+            ) : application.status === "INTERVIEW" ? (
+              <p className="mt-2 rounded-lg bg-brand-cream px-3 py-2 text-sm text-brand-teal">
+                Our team would like to interview you
+                {application.interviewScheduledAt
+                  ? ` on ${dt(application.interviewScheduledAt)}.`
+                  : ". We\u2019ll reach out to arrange a time."}{" "}
+                This is the final step before we vet and list you.
+              </p>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500">
+                We&apos;ll email you once our team has reviewed your
+                application. Vetting includes a short interview with our
+                reviewers.
+              </p>
+            )}
+          </Card>
+        )
       ) : (
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -112,8 +117,9 @@ export default async function SitterDashboard() {
                 {profile.baseRate === null
                   ? " (Ri'aya's starting rate until you set your own)"
                   : ""}
-                . Your application proposed{" "}
-                {moneyHr(application.targetPayRate)}.
+                {application
+                  ? `. Your application proposed ${moneyHr(application.targetPayRate)}.`
+                  : "."}
               </p>
               {/* Sitters price their own time; confirmed bookings keep the
                   rate they were quoted at. */}
@@ -135,8 +141,8 @@ export default async function SitterDashboard() {
                 </button>
               </form>
               <p className="mt-1 text-xs text-slate-500">
-                Ri&apos;aya&apos;s fee is added on top for the family, so you keep
-                your full rate. Existing bookings keep their agreed price.
+                Ri&apos;aya&apos;s fee is added on top for the family, so you
+                keep your full rate. Existing bookings keep their agreed price.
               </p>
             </div>
             <Badge color={profile.isListed ? "green" : "amber"}>
@@ -145,8 +151,8 @@ export default async function SitterDashboard() {
           </div>
           {!profile.isListed && (
             <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Only Ri&apos;aya can list you. You can still set your availability now
-              so you&apos;re ready when we list you.
+              Only Ri&apos;aya can list you. You can still set your availability
+              now so you&apos;re ready when we list you.
             </p>
           )}
           <div className="mt-4 flex flex-wrap gap-3">
@@ -260,7 +266,9 @@ function BookingSection({
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                  <Badge color={BOOKING_STATUS_COLOR[b.status]}>{b.status}</Badge>
+                  <Badge color={BOOKING_STATUS_COLOR[b.status]}>
+                    {b.status}
+                  </Badge>
                   <Link
                     href={`/bookings/${b.id}`}
                     className="text-sm font-medium text-brand-coral"
