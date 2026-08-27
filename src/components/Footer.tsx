@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { NewsletterSignup } from "@/components/NewsletterSignup";
+import { ReportProblem } from "@/components/ReportProblem";
 import { getBusinessSettings } from "@/lib/settings";
 import { supportEmail } from "@/lib/booking-reminders";
 
@@ -51,6 +52,7 @@ export async function Footer() {
           <a href={`mailto:${support}`} className="hover:text-brand-coral">
             {support}
           </a>
+          <ReportProblem />
           <span className="text-brand-teal-light">
             © {new Date().getFullYear()} Ri&apos;aya Babysitters Inc.
           </span>
