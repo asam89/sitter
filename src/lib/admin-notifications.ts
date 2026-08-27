@@ -8,8 +8,10 @@
 //
 // Recipients default to every ADMIN user in the database so adding an Admin
 // account is enough to start receiving alerts; ADMIN_ALERT_EMAILS overrides
-// that with an explicit comma-separated list. Each alert can be switched off
-// individually (ADMIN_ALERT_SIGNUP / _APPLICATION / _BOOKING = false).
+// that with an explicit comma-separated list, and ADMIN_ALERT_EXTRA_EMAILS adds
+// addresses that have no account (a shared inbox like info@) on top of whoever
+// is already on the list. Each alert can be switched off individually
+// (ADMIN_ALERT_SIGNUP / _APPLICATION / _BOOKING = false).
 //
 // Text alerts go to ADMIN_ALERT_PHONES and need a real SMS provider
 // (SMS_PROVIDER=twilio); unset, the stub logs them server-side.
@@ -56,26 +58,46 @@ function adminPhones(): string[] {
 export async function adminAlertRecipients(): Promise<{
   emails: string[];
   source: "ADMIN_ACCOUNTS" | "ENV_OVERRIDE";
+  extras: string[];
 }> {
   return {
     emails: await adminRecipients(),
     source: process.env.ADMIN_ALERT_EMAILS ? "ENV_OVERRIDE" : "ADMIN_ACCOUNTS",
+    extras: extraRecipients(),
   };
 }
 
+function commaList(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean);
+}
+
+// Shared inboxes with no Admin account (info@riaya.ca). Added to the list
+// rather than replacing it, so an Admin can't lose their own alerts to it.
+function extraRecipients(): string[] {
+  return commaList(process.env.ADMIN_ALERT_EXTRA_EMAILS);
+}
+
 async function adminRecipients(): Promise<string[]> {
-  const override = process.env.ADMIN_ALERT_EMAILS;
-  if (override) {
-    return override
-      .split(",")
-      .map((e) => e.trim())
-      .filter(Boolean);
-  }
-  const admins = await prisma.user.findMany({
-    where: { role: "ADMIN", suspended: false },
-    select: { email: true },
+  const override = commaList(process.env.ADMIN_ALERT_EMAILS);
+  const accounts = override.length
+    ? override
+    : (
+        await prisma.user.findMany({
+          where: { role: "ADMIN", suspended: false },
+          select: { email: true },
+        })
+      ).map((a) => a.email);
+
+  const seen = new Set<string>();
+  return [...accounts, ...extraRecipients()].filter((address) => {
+    const key = address.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
-  return admins.map((a) => a.email);
 }
 
 async function alertAdmins(
