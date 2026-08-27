@@ -21,7 +21,12 @@ import { prisma } from "@/lib/prisma";
 import { getEmailProvider, getSmsProvider } from "@/lib/notifications";
 import { bookingRef, dt, money, requestRef } from "@/lib/format";
 
-type AdminAlert = "SIGNUP" | "APPLICATION" | "BOOKING" | "REQUEST";
+type AdminAlert =
+  | "SIGNUP"
+  | "APPLICATION"
+  | "BOOKING"
+  | "REQUEST"
+  | "ERROR";
 
 function appUrl(path: string): string {
   const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(
@@ -215,6 +220,65 @@ export async function notifyAdminsOfOpenRequest(r: {
       `City: ${r.city ?? "—"}\n\n` +
       `${r.listedSitterCount} listed sitter(s) have been notified and can claim ` +
       `it. You can also assign someone directly: ${appUrl("/admin/requests")}`,
+  );
+}
+
+// A page or server action threw: something on the site is broken right now.
+// Deduplicated per route upstream, so receiving this twice means two distinct
+// breakages rather than one noisy page.
+export async function notifyAdminsOfBrokenFunction(e: {
+  ref: string;
+  route: string;
+  message: string | null;
+  digest: string | null;
+  userRole: string | null;
+  userEmail: string | null;
+  adminUrl: string;
+}): Promise<void> {
+  await alertAdmins(
+    "ERROR",
+    `Broken on Ri'aya: ${e.route} (${e.ref})`,
+    `Something on the site just failed for a real user.\n\n` +
+      `Reference: ${e.ref}\n` +
+      `Page: ${e.route}\n` +
+      `Error: ${e.message ?? "hidden by Next.js — see the server logs"}\n` +
+      `Digest: ${e.digest ?? "—"} (matches the server log line)\n` +
+      `Affected user: ${e.userEmail ?? "signed-out visitor"}` +
+      `${e.userRole ? ` (${e.userRole})` : ""}\n` +
+      `When: ${dt(new Date())}\n\n` +
+      `Further failures on this page are logged but not emailed for 30 minutes.\n` +
+      `Recent failures and reports: ${e.adminUrl}`,
+  );
+}
+
+// Someone pressed "Report a problem".
+export async function notifyAdminsOfProblemReport(r: {
+  ref: string;
+  route: string;
+  note: string;
+  relatedRef: string | null;
+  userRole: string | null;
+  userEmail: string | null;
+  issueUrl: string | null;
+  issueError: string | null;
+  adminUrl: string;
+}): Promise<void> {
+  await alertAdmins(
+    "ERROR",
+    `Problem reported on ${r.route} (${r.ref})`,
+    `A user reported a problem.\n\n` +
+      `Reference: ${r.ref}\n` +
+      `Page: ${r.route}\n` +
+      `From: ${r.userEmail ?? "signed-out visitor"}` +
+      `${r.userRole ? ` (${r.userRole})` : ""}\n` +
+      (r.relatedRef ? `Related error: ${r.relatedRef}\n` : "") +
+      `When: ${dt(new Date())}\n\n` +
+      `What they said:\n${r.note}\n\n` +
+      (r.issueUrl
+        ? `GitHub issue: ${r.issueUrl}\n`
+        : `No GitHub issue was created (${r.issueError ?? "unknown reason"}) — ` +
+          `file it by hand.\n`) +
+      `Recent failures and reports: ${r.adminUrl}`,
   );
 }
 

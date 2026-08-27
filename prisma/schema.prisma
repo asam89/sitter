@@ -695,11 +695,48 @@ model BusinessSettings {
 
   // --- Support / reminders ---
   // Address quoted in reminders so both sides know who to contact.
-  supportEmail String? @default("info@riaya.ca")
+  supportEmail           String? @default("info@riaya.ca")
   // Hours before the start at which each pre-session reminder goes out. 0
   // disables that reminder.
-  reminderLeadHours      Int @default(24)
-  reminderFinalLeadHours Int @default(2)
+  reminderLeadHours      Int     @default(24)
+  reminderFinalLeadHours Int     @default(2)
 
   updatedAt DateTime @updatedAt
+}
+
+// A broken function (an unhandled server/page error) or a user-filed problem
+// report. Both exist so an Admin gets alerted once, can see the history, and
+// can point a GitHub issue at a short reference the user can quote.
+//
+// Deliberately holds no personal data beyond the reporter's id/role/email:
+// error messages are truncated and nothing here is safe to assume private, as
+// the reference and note travel to a public GitHub issue.
+model ErrorEvent {
+  id   String         @id @default(cuid())
+  ref  String         @unique // short human code quoted to the user, e.g. RY-7Q2K4M
+  kind ErrorEventKind
+
+  route        String
+  message      String? // truncated; Next hides the real message from the browser
+  digest       String? // Next's error digest, ties the browser report to server logs
+  reporterNote String?
+
+  userId    String?
+  userRole  String?
+  userEmail String?
+
+  githubIssueUrl    String?
+  githubIssueNumber Int?
+  githubError       String? // why issue creation failed, so an Admin can retry
+
+  alertedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([route, kind])
+}
+
+enum ErrorEventKind {
+  SERVER_ERROR
+  USER_REPORT
 }
