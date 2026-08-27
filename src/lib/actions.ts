@@ -139,7 +139,22 @@ async function notify(
 
 // ---------- Sitter: application ----------
 
-export async function submitApplication(fd: FormData) {
+export type ApplicationFormState = { error?: string };
+
+// Zod paths → the wording on the form, so a rejected answer names itself.
+const APPLICATION_FIELD_LABELS: Record<string, string> = {
+  bio: "About you",
+  experience: "Childcare experience",
+  certifications: "Certifications",
+  documentUrls: "Document links",
+  targetPayRate: "Target hourly pay rate",
+  whatsappPhone: "Mobile number",
+};
+
+export async function submitApplication(
+  _prevState: ApplicationFormState,
+  fd: FormData,
+): Promise<ApplicationFormState> {
   const user = await requireRole("SITTER");
   const parsed = applicationSchema.safeParse({
     bio: s(fd, "bio"),
@@ -150,19 +165,30 @@ export async function submitApplication(fd: FormData) {
     whatsappPhone: s(fd, "whatsappPhone"),
     whatsappReachable: s(fd, "whatsappReachable"),
   });
-  if (!parsed.success) throw new Error("Invalid application");
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = String(issue?.path[0] ?? "");
+    const label =
+      APPLICATION_FIELD_LABELS[field] ?? (field ? field : "One of the answers");
+    return { error: `${label}: ${issue?.message ?? "please check this field."}` };
+  }
   const d = parsed.data;
 
-  // An APPLIED/UNDER_REVIEW application can be resubmitted; once VETTED it is
-  // locked (profile exists). REJECTED can re-apply.
+  // An APPLIED/UNDER_REVIEW/INTERVIEW application can be resubmitted; once
+  // VETTED it is locked (profile exists). REJECTED can re-apply.
   const existing = await prisma.sitterApplication.findUnique({
     where: { userId: user.id },
   });
   if (existing?.status === "VETTED") {
-    throw new Error("You are already vetted.");
+    return { error: "You are already vetted \u2014 nothing to resubmit." };
   }
 
   const wasResubmitted = existing !== null;
+  // A resubmission must not undo the admin's work: a booked interview and its
+  // notes survive an edit, and only a REJECTED application restarts at APPLIED.
+  const keepReview =
+    existing !== null &&
+    (existing.status === "UNDER_REVIEW" || existing.status === "INTERVIEW");
 
   await prisma.sitterApplication.upsert({
     where: { userId: user.id },
@@ -185,11 +211,15 @@ export async function submitApplication(fd: FormData) {
       targetPayRate: d.targetPayRate,
       whatsappPhone: d.whatsappPhone,
       whatsappReachable: d.whatsappReachable,
-      status: "APPLIED",
-      reviewedByAdminId: null,
-      reviewedAt: null,
-      interviewScheduledAt: null,
-      interviewNotes: null,
+      ...(keepReview
+        ? {}
+        : {
+            status: "APPLIED" as const,
+            reviewedByAdminId: null,
+            reviewedAt: null,
+            interviewScheduledAt: null,
+            interviewNotes: null,
+          }),
     },
   });
   // The application number doubles as the sitter's contact number: keep it on

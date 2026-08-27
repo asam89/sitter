@@ -1,12 +1,47 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/session";
+import Link from "next/link";
+import { requireRole, requireUser } from "@/lib/session";
 import { submitApplication } from "@/lib/actions";
 import { Card, PageTitle, buttonClass } from "@/components/ui";
+import { ApplyForm } from "./ApplyForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function SitterApplyPage() {
+  // A parent landing here used to be bounced to the home page with no
+  // explanation; tell them what to do instead.
+  const viewer = await requireUser();
+  if (viewer.role !== "SITTER") {
+    if (viewer.role === "ADMIN") redirect("/admin/applications");
+    return (
+      <div className="mx-auto max-w-2xl">
+        <PageTitle
+          title="Applying as a sitter"
+          subtitle="This account is registered as a parent, so it can't hold a sitter application."
+        />
+        <Card>
+          <p className="text-sm text-slate-600">
+            Sitter applications live on a sitter account. Sign up as a sitter
+            with a different email address and the application form opens right
+            after — or email us and we&apos;ll set it up for you.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link href="/signup?role=SITTER" className={buttonClass()}>
+              Create a sitter account
+            </Link>
+            <a
+              href="mailto:info@riaya.ca?subject=I%20want%20to%20apply%20as%20a%20sitter"
+              className={buttonClass("secondary")}
+            >
+              Email info@riaya.ca
+            </a>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const user = await requireRole("SITTER");
   const app = await prisma.sitterApplication.findUnique({
     where: { userId: user.id },
@@ -17,110 +52,18 @@ export default async function SitterApplyPage() {
   });
   if (app?.status === "VETTED") redirect("/sitter");
 
-  const input =
-    "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
-
   return (
     <div className="mx-auto max-w-2xl">
       <PageTitle
         title="Sitter vetting application"
         subtitle="Tell us about yourself. Our team manually reviews every applicant and holds a short interview before vetting — the pay rate you enter is a proposal; we set your listed rate when we vet you."
       />
-      <Card>
-        <form action={submitApplication} className="space-y-4">
-          <label className="block text-sm font-medium">
-            About you (bio)
-            <textarea
-              name="bio"
-              required
-              minLength={10}
-              rows={3}
-              defaultValue={app?.bio ?? ""}
-              className={input}
-            />
-          </label>
-          <label className="block text-sm font-medium">
-            Childcare experience
-            <textarea
-              name="experience"
-              required
-              minLength={10}
-              rows={3}
-              defaultValue={app?.experience ?? ""}
-              className={input}
-            />
-          </label>
-          <label className="block text-sm font-medium">
-            Mobile number
-            <input
-              type="tel"
-              name="whatsappPhone"
-              required
-              inputMode="tel"
-              placeholder="+1 416 555 0134"
-              defaultValue={app?.whatsappPhone ?? account?.phone ?? ""}
-              className={input}
-            />
-            <span className="mt-1 block text-xs text-slate-500">
-              Our team uses this to reach you about your application, the
-              interview, and bookings.
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              name="whatsappReachable"
-              defaultChecked={app?.whatsappReachable ?? true}
-              className="mt-1"
-            />
-            <span>
-              This number is on WhatsApp — you can message me there
-              <span className="mt-1 block text-xs font-normal text-slate-500">
-                Leave it unticked and we&rsquo;ll stick to calls, texts and
-                email.
-              </span>
-            </span>
-          </label>
-          <label className="block text-sm font-medium">
-            Certifications (one per line or comma-separated)
-            <textarea
-              name="certifications"
-              rows={2}
-              placeholder="CPR&#10;First Aid"
-              defaultValue={app?.certifications.join("\n") ?? ""}
-              className={input}
-            />
-          </label>
-          <label className="block text-sm font-medium">
-            Document links — CPR cert, police check, etc. (one URL per line)
-            <textarea
-              name="documentUrls"
-              rows={2}
-              placeholder="https://…"
-              defaultValue={app?.documentUrls.join("\n") ?? ""}
-              className={input}
-            />
-            <span className="mt-1 block text-xs text-slate-500">
-              MVP: paste document URLs. Direct file upload is a later phase.
-            </span>
-          </label>
-          <label className="block text-sm font-medium">
-            Target hourly pay rate (CAD) — your proposal
-            <input
-              type="number"
-              name="targetPayRate"
-              required
-              min={1}
-              max={500}
-              defaultValue={app?.targetPayRate ?? 20}
-              className={input}
-            />
-          </label>
-          <button type="submit" className={buttonClass()}>
-            {app ? "Resubmit application" : "Submit application"}
-          </button>
-        </form>
-      </Card>
+      <ApplyForm
+        action={submitApplication}
+        application={app}
+        accountPhone={account?.phone ?? null}
+        interviewPending={app?.status === "INTERVIEW"}
+      />
     </div>
   );
 }
