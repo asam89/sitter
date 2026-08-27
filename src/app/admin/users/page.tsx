@@ -111,6 +111,12 @@ export default async function AdminUsersPage({
             ? "Every active Admin account receives them — promote someone to Admin below and they are added automatically."
             : "Set explicitly by ADMIN_ALERT_EMAILS, which overrides the Admin accounts below."}
         </p>
+        {alerts.extras.length > 0 && (
+          <p className="text-xs text-slate-500">
+            Plus {alerts.extras.join(", ")} from ADMIN_ALERT_EXTRA_EMAILS —
+            shared inboxes with no account here.
+          </p>
+        )}
       </Card>
 
       <Card>
