@@ -40,6 +40,29 @@ export function hasServiceAddress(
   );
 }
 
+// One-line service address for the people allowed to see it (the parent, the
+// sitter working the job, Admin). Empty when nothing is on file.
+export function serviceAddress(
+  profile:
+    | Pick<
+        ParentProfile,
+        "streetAddress" | "unit" | "city" | "province" | "postalCode"
+      >
+    | null
+    | undefined,
+): string {
+  if (!profile) return "";
+  return [
+    profile.streetAddress,
+    profile.unit ? `Unit ${profile.unit}` : null,
+    profile.city,
+    profile.province,
+    profile.postalCode,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 // Derives the level purely from the underlying verification facts, so the
 // stored `verificationLevel` can never drift from reality.
 export function deriveLevel(

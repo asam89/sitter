@@ -17,7 +17,7 @@ import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
 import { REFUND_TIER_LABEL, refundPolicyLines } from "@/lib/cancellation";
 import { readBookingMedical } from "@/lib/child-medical";
-import { hasServiceAddress } from "@/lib/verification";
+import { hasServiceAddress, serviceAddress } from "@/lib/verification";
 import { InterviewCard } from "./InterviewCard";
 import { PaymentChoice } from "./PaymentChoice";
 import { ActionButton } from "@/components/ActionButton";
@@ -92,29 +92,19 @@ export default async function BookingPage({
   const medicalWithheldFromSitter =
     isSitter && !booking.paidAt && booking.status !== "CANCELLED";
 
-  // Service address (+ phone) is released to the sitter ONLY once the sitter has
-  // approved (addressReleasedAt is set then) — never while REQUESTED, never
-  // before, never in a URL. The parent always sees their own; Admin sees it for
+  // The assigned sitter sees the service address on the request itself: they
+  // can't judge travel without it, so withholding it until they accept made
+  // them accept blind. It stays limited to that one sitter — never in a URL,
+  // never to other sitters. The parent always sees their own; Admin sees it for
   // support.
   const addr = booking.parent.parentProfile;
   const addressUnlocked = booking.addressReleasedAt != null;
   const addressComplete = !!addr && hasServiceAddress(addr);
-  const showServiceAddress =
-    !!addr && (isParent || isAdmin || (isSitter && addressUnlocked));
+  const showServiceAddress = !!addr && (isParent || isAdmin || isSitter);
   // The sitter needs to reach the family directly once they own the booking —
   // same release point as the address.
   const showParentContact = isAdmin || (isSitter && addressUnlocked);
-  const fullAddress = addr
-    ? [
-        addr.streetAddress,
-        addr.unit ? `Unit ${addr.unit}` : null,
-        addr.city,
-        addr.province,
-        addr.postalCode,
-      ]
-        .filter(Boolean)
-        .join(", ")
-    : "";
+  const fullAddress = serviceAddress(addr);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -175,20 +165,21 @@ export default async function BookingPage({
         </dl>
       </Card>
 
-      {/* Service address — released to the sitter only once confirmed. */}
+      {/* Service address — the assigned sitter sees it from the request on. */}
       {showServiceAddress && fullAddress && (
         <Card>
           <h2 className="font-semibold">Service address</h2>
           <p className="mt-2 text-sm text-slate-700">{fullAddress}</p>
           {isSitter && (
             <p className="mt-1 text-xs text-slate-500">
-              Shared with you because you approved this booking.
+              Shared with you because this booking was sent to you, so you can
+              judge the travel before you accept. Use it for this booking only.
             </p>
           )}
           {isParent && booking.status === "REQUESTED" && (
             <p className="mt-1 text-xs text-slate-500">
-              Your sitter will see this address only after they approve the
-              booking.
+              Only the sitter you asked can see this address, so they can judge
+              the travel before accepting.
             </p>
           )}
         </Card>
