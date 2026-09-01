@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { connectStripe, setMyRate } from "@/lib/actions";
+import { connectStripe, refreshPayoutStatus, setMyRate } from "@/lib/actions";
 import { effectiveRate, sitterPayout } from "@/lib/pricing";
 import { ActionButton } from "@/components/ActionButton";
 import {
@@ -12,14 +12,30 @@ import {
   PageTitle,
   buttonClass,
 } from "@/components/ui";
+import { syncConnectAccount } from "@/lib/payouts";
 import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
 import { PublicProfileCard } from "./PublicProfileCard";
 import { dt, money, moneyHr } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default async function SitterDashboard() {
+export default async function SitterDashboard({
+  searchParams,
+}: {
+  searchParams: { payouts?: string };
+}) {
   const user = await requireRole("SITTER");
+  // Coming back from Stripe onboarding: ask Stripe whether payouts are actually
+  // enabled rather than trusting the redirect.
+  if (searchParams.payouts === "return") {
+    const existing = await prisma.sitterProfile.findUnique({
+      where: { userId: user.id },
+      select: { id: true, stripeAccountId: true },
+    });
+    if (existing?.stripeAccountId) {
+      await syncConnectAccount(existing.id, existing.stripeAccountId);
+    }
+  }
   const [application, profile] = await Promise.all([
     prisma.sitterApplication.findUnique({ where: { userId: user.id } }),
     prisma.sitterProfile.findUnique({
@@ -155,6 +171,16 @@ export default async function SitterDashboard() {
               now so you&apos;re ready when we list you.
             </p>
           )}
+          {profile.stripeAccountId && !profile.stripePayoutsEnabled && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Stripe hasn&apos;t enabled payouts on your account yet
+              {profile.stripeRequirementsDue
+                ? ` — it still needs: ${profile.stripeRequirementsDue}.`
+                : "."}{" "}
+              You can still be booked; Ri&apos;aya pays you by e-Transfer until
+              this is finished.
+            </p>
+          )}
           <div className="mt-4 flex flex-wrap gap-3">
             <ButtonLink href="/sitter/availability">
               Manage availability ({profile.slots.length} open)
@@ -164,12 +190,21 @@ export default async function SitterDashboard() {
                 Open requests ({openRequestCount})
               </ButtonLink>
             )}
-            {profile.stripeAccountId ? (
-              <Badge color="green">Payouts connected</Badge>
-            ) : (
+            {!profile.stripeAccountId ? (
               <ActionButton action={connectStripe} variant="secondary">
                 Connect payouts (Stripe)
               </ActionButton>
+            ) : profile.stripePayoutsEnabled ? (
+              <Badge color="green">Payouts connected</Badge>
+            ) : (
+              <>
+                <ActionButton action={connectStripe} variant="secondary">
+                  Finish payout setup
+                </ActionButton>
+                <ActionButton action={refreshPayoutStatus} variant="secondary">
+                  Check status
+                </ActionButton>
+              </>
             )}
           </div>
         </Card>

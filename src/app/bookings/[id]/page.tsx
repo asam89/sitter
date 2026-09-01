@@ -7,9 +7,12 @@ import {
   cancelBookingWithReason,
   completeBooking,
   declineBooking,
+  finalizeCardPayment,
   payBooking,
   startBooking,
+  startCardPayment,
 } from "@/lib/actions";
+import { cardPaymentsEnabled, stripePublishableKey } from "@/lib/stripe";
 import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
 import { REFUND_TIER_LABEL, refundPolicyLines } from "@/lib/cancellation";
@@ -378,6 +381,11 @@ export default async function BookingPage({
           <div className="space-y-2">
             <PaymentChoice
               action={payBooking}
+              startCard={startCardPayment}
+              finalizeCard={finalizeCardPayment}
+              publishableKey={
+                cardPaymentsEnabled ? stripePublishableKey : null
+              }
               bookingId={booking.id}
               amount={money(booking.totalAmount)}
               etransferEmail={settings.etransferEmail}

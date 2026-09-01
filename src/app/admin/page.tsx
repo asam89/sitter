@@ -143,6 +143,9 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/terms" variant="secondary">
             Waiver &amp; terms
           </ButtonLink>
+          <ButtonLink href="/admin/payouts" variant="secondary">
+            Sitter payouts
+          </ButtonLink>
           <ButtonLink href="/admin/errors" variant="secondary">
             Failures &amp; reports
           </ButtonLink>

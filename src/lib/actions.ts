@@ -28,6 +28,11 @@ import {
 } from "@/lib/verification";
 import { stripeEnabled, stripe } from "@/lib/stripe";
 import {
+  payoutAmount,
+  syncConnectAccount,
+  transferToSitter,
+} from "@/lib/payouts";
+import {
   notifyBookingEvent,
   type BookingEvent,
 } from "@/lib/booking-notifications";
@@ -41,7 +46,8 @@ import {
   notifyAdminsOfOpenRequest,
 } from "@/lib/admin-notifications";
 import { notifyListedSittersOfRequest } from "@/lib/request-notifications";
-import { Prisma, type BusinessSettings } from "@prisma/client";
+import { markCardPaid } from "@/lib/payments";
+import { Prisma, type Booking, type BusinessSettings } from "@prisma/client";
 import {
   adminBookingSchema,
   applicationSchema,
@@ -1189,76 +1195,137 @@ export async function declineBooking(bookingId: string) {
 
 export type PaymentFormState = { error?: string };
 
-// Payment happens after the sitter approves, so a parent is never charged for a
-// booking the sitter might decline. A card payment settles here and holds the
-// funds until completion; an e-transfer settles outside the app, so the booking
-// only records the choice and waits for an Admin to confirm the money arrived.
-export async function payBooking(
-  _prevState: PaymentFormState,
+// Shared pre-payment checks: the booking must be the parent's, approved, unpaid
+// and carrying an address; the waiver is accepted here if it is still
+// outstanding (an Admin-entered booking never collected it).
+async function preparePayment(
   fd: FormData,
-): Promise<PaymentFormState> {
+): Promise<
+  | { ok: false; error: string }
+  | { ok: true; booking: Booking; waiver: Prisma.BookingUpdateInput }
+> {
   const user = await requireRole("PARENT");
   const bookingId = s(fd, "bookingId");
-  const method = s(fd, "method") === "ETRANSFER" ? "ETRANSFER" : "CARD";
   const booking = await prisma.booking.findUniqueOrThrow({
     where: { id: bookingId },
   });
   if (booking.parentId !== user.id) throw new Error("Not your booking");
   if (booking.status !== "APPROVED") {
-    return { error: "The sitter has to approve the booking before payment." };
+    return {
+      ok: false,
+      error: "The sitter has to approve the booking before payment.",
+    };
   }
-  if (booking.paidAt) return { error: "This booking is already paid." };
+  if (booking.paidAt) return { ok: false, error: "This booking is already paid." };
 
   // An Admin-entered booking never went through the booking form, so this is
   // the parent's first chance to give the address the sitter needs.
   const address = await ensureServiceAddress(user.id, fd);
-  if (!address.ok) return { error: address.error };
+  if (!address.ok) return { ok: false, error: address.error };
 
-  // An Admin-entered booking carries no waiver acceptance yet; the parent gives
-  // it here, before any money moves.
   const waiver: Prisma.BookingUpdateInput = {};
   if (!booking.waiverAcceptedAt) {
     if (s(fd, "waiverAccepted") !== "on") {
-      return { error: "You must accept the waiver and terms to pay." };
+      return {
+        ok: false,
+        error: "You must accept the waiver and terms to pay.",
+      };
     }
     const acceptance = waiverAcceptanceContext();
     waiver.waiverAcceptedAt = new Date();
     waiver.waiverAcceptedIp = acceptance.ip;
     waiver.waiverAcceptedUserAgent = acceptance.userAgent;
   }
+  return { ok: true, booking, waiver };
+}
+
+// Card step 1: validate, record the waiver, and open a PaymentIntent whose
+// client secret the browser confirms with Stripe Elements. No card details ever
+// reach this server — the browser sends them straight to Stripe.
+export async function startCardPayment(
+  fd: FormData,
+): Promise<{ error?: string; clientSecret?: string }> {
+  if (!stripeEnabled || !stripe) {
+    return { error: "Card payments are not switched on yet." };
+  }
+  const prepared = await preparePayment(fd);
+  if (!prepared.ok) return { error: prepared.error };
+  const { booking, waiver } = prepared;
+
+  // Funds are captured to Ri'aya's balance and held there until completion,
+  // then transferred to the sitter's connected account minus Ri'aya's fee.
+  const intent = booking.stripePaymentIntentId
+    ? await stripe.paymentIntents.update(booking.stripePaymentIntentId, {
+        amount: booking.totalAmount * 100,
+      })
+    : await stripe.paymentIntents.create({
+        amount: booking.totalAmount * 100,
+        currency: "cad",
+        capture_method: "automatic",
+        automatic_payment_methods: { enabled: true },
+        metadata: { bookingId: booking.id },
+      });
+
+  await prisma.booking.update({
+    where: { id: booking.id },
+    data: { ...waiver, stripePaymentIntentId: intent.id },
+  });
+  return { clientSecret: intent.client_secret ?? undefined };
+}
+
+// Card step 2: the browser reports a confirmed card. The booking is only marked
+// paid after Stripe itself confirms the intent succeeded (the webhook does the
+// same, so a closed tab still lands the payment).
+export async function finalizeCardPayment(
+  bookingId: string,
+): Promise<{ error?: string }> {
+  const user = await requireRole("PARENT");
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+  });
+  if (booking.parentId !== user.id) throw new Error("Not your booking");
+  if (booking.paidAt) return {};
+  if (!booking.stripePaymentIntentId) return { error: "No payment started." };
+
+  const result = await markCardPaid(bookingId, booking.stripePaymentIntentId);
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/admin/bookings");
+  return result.paid ? {} : { error: result.error };
+}
+
+// Payment happens after the sitter approves, so a parent is never charged for a
+// booking the sitter might decline. This path settles an e-transfer intent (and,
+// where Stripe isn't configured, the mock card payment used in dev/test).
+export async function payBooking(
+  _prevState: PaymentFormState,
+  fd: FormData,
+): Promise<PaymentFormState> {
+  const method = s(fd, "method") === "ETRANSFER" ? "ETRANSFER" : "CARD";
+  const prepared = await preparePayment(fd);
+  if (!prepared.ok) return { error: prepared.error };
+  const { booking, waiver } = prepared;
 
   if (method === "ETRANSFER") {
     await prisma.booking.update({
-      where: { id: bookingId },
+      where: { id: booking.id },
       data: { ...waiver, paymentMethod: "ETRANSFER" },
     });
-    revalidatePath(`/bookings/${bookingId}`);
+    revalidatePath(`/bookings/${booking.id}`);
     revalidatePath("/admin/bookings");
     return {};
   }
 
-  let paymentIntentId: string | null = null;
-  if (stripeEnabled && stripe) {
-    // Funds captured to the platform and held (escrow) until completion, then
-    // transferred to the sitter's connected account minus the platform fee.
-    const pi = await stripe.paymentIntents.create({
-      amount: booking.totalAmount * 100,
-      currency: "cad",
-      capture_method: "automatic",
-      metadata: { bookingId },
-    });
-    paymentIntentId = pi.id;
+  if (stripeEnabled) {
+    return { error: "Enter your card details to pay by card." };
   }
+
+  // Mock mode (no Stripe key): no money moves, the booking is simply marked
+  // paid so the rest of the lifecycle is exercisable in dev/test.
   await prisma.booking.update({
-    where: { id: bookingId },
-    data: {
-      ...waiver,
-      paidAt: new Date(),
-      paymentMethod: "CARD",
-      stripePaymentIntentId: paymentIntentId,
-    },
+    where: { id: booking.id },
+    data: { ...waiver, paidAt: new Date(), paymentMethod: "CARD" },
   });
-  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath(`/bookings/${booking.id}`);
   return {};
 }
 
@@ -1339,24 +1406,22 @@ export async function completeBooking(bookingId: string) {
   if (!booking.paidAt)
     throw new Error("Booking must be paid before completion.");
 
-  if (
-    stripeEnabled &&
-    stripe &&
-    booking.sitter.sitterProfile?.stripeAccountId
-  ) {
-    await stripe.transfers.create({
-      amount: sitterPayout(booking) * 100,
-      currency: "cad",
-      destination: booking.sitter.sitterProfile.stripeAccountId,
-      metadata: { bookingId },
-    });
-  }
+  // Completion releases the sitter's money. The transfer is attempted here but
+  // is never allowed to fail the completion — anything that doesn't move shows
+  // up as outstanding on /admin/payouts.
+  const attempt = await transferToSitter(booking, booking.sitter.sitterProfile);
   await prisma.booking.update({
     where: { id: bookingId },
     data: {
       status: "COMPLETED",
       completedAt: new Date(),
       payoutReleasedAt: new Date(),
+      payoutAmount: payoutAmount(booking),
+      payoutStatus: attempt.status,
+      payoutMethod: attempt.status === "PAID" ? "STRIPE" : null,
+      payoutTransferId: attempt.transferId,
+      payoutError: attempt.error,
+      payoutPaidAt: attempt.status === "PAID" ? new Date() : null,
     },
   });
   await notify("COMPLETED", ["PARENT", "SITTER"], booking, settings);
@@ -1524,8 +1589,13 @@ export async function connectStripe() {
 
   if (stripeEnabled && stripe) {
     let accountId = profile.stripeAccountId;
-    if (!accountId) {
-      const account = await stripe.accounts.create({ type: "express" });
+    if (!accountId || accountId.startsWith("mock_acct_")) {
+      const account = await stripe.accounts.create({
+        type: "express",
+        country: "CA",
+        email: user.email ?? undefined,
+        capabilities: { transfers: { requested: true } },
+      });
       accountId = account.id;
       await prisma.sitterProfile.update({
         where: { id: profile.id },
@@ -1536,7 +1606,7 @@ export async function connectStripe() {
     const link = await stripe.accountLinks.create({
       account: accountId,
       refresh_url: `${base}/sitter`,
-      return_url: `${base}/sitter`,
+      return_url: `${base}/sitter?payouts=return`,
       type: "account_onboarding",
     });
     redirect(link.url);
@@ -1551,4 +1621,87 @@ export async function connectStripe() {
     },
   });
   revalidatePath("/sitter");
+}
+
+// Re-read the connected account from Stripe. Onboarding often finishes
+// asynchronously (Stripe verifying identity or bank details), so "I'm done"
+// from the sitter isn't proof they can be paid.
+export async function refreshPayoutStatus() {
+  const user = await requireRole("SITTER");
+  const profile = await prisma.sitterProfile.findUniqueOrThrow({
+    where: { userId: user.id },
+  });
+  if (profile.stripeAccountId) {
+    await syncConnectAccount(profile.id, profile.stripeAccountId);
+  }
+  revalidatePath("/sitter");
+}
+
+// ---------- Admin: sitter payouts ----------
+
+// Retry (or make a first) Stripe transfer for a completed booking.
+export async function adminPayoutBooking(fd: FormData) {
+  await requireRole("ADMIN");
+  const bookingId = s(fd, "bookingId");
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: { sitter: { include: { sitterProfile: true } } },
+  });
+  if (booking.status !== "COMPLETED") {
+    throw new Error("Only a completed booking can be paid out.");
+  }
+  if (booking.payoutPaidAt) throw new Error("This payout is already settled.");
+
+  const profile = booking.sitter.sitterProfile;
+  if (profile?.stripeAccountId) {
+    // Refresh first: a sitter who has since finished onboarding should not stay
+    // blocked on a stale flag.
+    await syncConnectAccount(profile.id, profile.stripeAccountId);
+  }
+  const fresh = profile
+    ? await prisma.sitterProfile.findUnique({ where: { id: profile.id } })
+    : null;
+
+  const attempt = await transferToSitter(booking, fresh);
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      payoutAmount: payoutAmount(booking),
+      payoutStatus: attempt.status,
+      payoutMethod: attempt.status === "PAID" ? "STRIPE" : null,
+      payoutTransferId: attempt.transferId,
+      payoutError: attempt.error,
+      payoutPaidAt: attempt.status === "PAID" ? new Date() : null,
+    },
+  });
+  revalidatePath("/admin/payouts");
+}
+
+// Record a payout Ri'aya settled outside Stripe (e-transfer or cash), so the
+// dashboard stops showing it as owed and there is a record of who paid it.
+export async function adminMarkPayoutPaid(fd: FormData) {
+  const admin = await requireRole("ADMIN");
+  const bookingId = s(fd, "bookingId");
+  const note = s(fd, "note").slice(0, 200);
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+  });
+  if (booking.status !== "COMPLETED") {
+    throw new Error("Only a completed booking can be paid out.");
+  }
+  if (booking.payoutPaidAt) throw new Error("This payout is already settled.");
+
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      payoutAmount: payoutAmount(booking),
+      payoutStatus: "PAID",
+      payoutMethod: "MANUAL",
+      payoutPaidAt: new Date(),
+      payoutRecordedById: admin.id,
+      payoutNote: note || null,
+      payoutError: null,
+    },
+  });
+  revalidatePath("/admin/payouts");
 }
