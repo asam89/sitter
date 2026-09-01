@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { buttonClass } from "@/components/ui";
 import { ServiceAddressFields } from "@/components/ServiceAddressFields";
 import type { PaymentFormState } from "@/lib/actions";
+import { CardPaymentFields } from "./CardPaymentFields";
 
 function SubmitButton({
   method,
@@ -34,6 +35,9 @@ function SubmitButton({
 // arrives, so the booking stays unconfirmed until then.
 export function PaymentChoice({
   action,
+  startCard,
+  finalizeCard,
+  publishableKey,
   bookingId,
   amount,
   etransferEmail,
@@ -44,6 +48,9 @@ export function PaymentChoice({
   addressOnFile,
 }: {
   action: (state: PaymentFormState, fd: FormData) => Promise<PaymentFormState>;
+  startCard: (fd: FormData) => Promise<{ error?: string; clientSecret?: string }>;
+  finalizeCard: (bookingId: string) => Promise<{ error?: string }>;
+  publishableKey: string | null;
   bookingId: string;
   amount: string;
   etransferEmail: string | null;
@@ -56,9 +63,30 @@ export function PaymentChoice({
   const [state, formAction] = useFormState(action, {});
   const [method, setMethod] = useState<"CARD" | "ETRANSFER">("CARD");
   const [accepted, setAccepted] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [cardError, setCardError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Real card payments: the waiver/address are validated and a PaymentIntent is
+  // opened first, then Stripe's card fields appear for that exact amount.
+  const cardEntry = Boolean(publishableKey);
+  async function beginCardPayment() {
+    const form = formRef.current;
+    if (!form) return;
+    setStarting(true);
+    setCardError(null);
+    const started = await startCard(new FormData(form));
+    setStarting(false);
+    if (started.error || !started.clientSecret) {
+      setCardError(started.error ?? "Could not start the payment.");
+      return;
+    }
+    setClientSecret(started.clientSecret);
+  }
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form ref={formRef} action={formAction} className="space-y-3">
       <input type="hidden" name="bookingId" value={bookingId} />
       <input type="hidden" name="method" value={method} />
 
@@ -134,11 +162,41 @@ export function PaymentChoice({
         </p>
       )}
 
-      <SubmitButton
-        method={method}
-        amount={amount}
-        disabled={waiverOutstanding && !accepted}
-      />
+      {cardError && (
+        <p
+          role="alert"
+          className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
+          {cardError}
+        </p>
+      )}
+
+      {cardEntry && method === "CARD" ? (
+        clientSecret && publishableKey ? (
+          <CardPaymentFields
+            publishableKey={publishableKey}
+            clientSecret={clientSecret}
+            bookingId={bookingId}
+            amount={amount}
+            onPaid={finalizeCard}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={beginCardPayment}
+            disabled={(waiverOutstanding && !accepted) || starting}
+            className={buttonClass()}
+          >
+            {starting ? "Preparing…" : `Pay ${amount} by card`}
+          </button>
+        )
+      ) : (
+        <SubmitButton
+          method={method}
+          amount={amount}
+          disabled={waiverOutstanding && !accepted}
+        />
+      )}
     </form>
   );
 }

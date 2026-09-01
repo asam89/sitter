@@ -181,6 +181,7 @@ model User {
   reviewsReceived      Review[]                 @relation("ReviewsReceived")
   bookingsCreated      Booking[]                @relation("AdminCreatedBookings")
   paymentsRecorded     Booking[]                @relation("BookingPaymentsRecorded")
+  payoutsRecorded      Booking[]                @relation("BookingPayoutsRecorded")
 }
 
 // Hashed one-time verification codes for email/phone. The raw code is never
@@ -317,6 +318,13 @@ model SitterProfile {
   serviceRadiusKm Int      @default(15)
   vettedAt        DateTime @default(now())
   stripeAccountId String? // Stripe Connect Express connected account (test mode)
+  // Mirror of the connected account's state, refreshed from Stripe (webhook or
+  // on demand). A sitter can only be paid by Stripe once payouts are enabled;
+  // until then Admin settles them manually and /admin/payouts flags it.
+  stripePayoutsEnabled   Boolean   @default(false)
+  stripeDetailsSubmitted Boolean   @default(false)
+  stripeRequirementsDue  String? // short summary of what Stripe still wants
+  stripeStatusCheckedAt  DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -394,7 +402,17 @@ model Booking {
   paidAt                   DateTime?
   startedAt                DateTime? // set when moved to IN_PROGRESS
   completedAt              DateTime?
+  // payoutReleasedAt = the sitter's money is owed (booking completed).
+  // payoutPaidAt = it actually left Ri'aya, by Stripe transfer or by hand.
   payoutReleasedAt         DateTime?
+  payoutAmount             Int?
+  payoutStatus             PayoutStatus?
+  payoutMethod             PayoutMethod?
+  payoutTransferId         String? // Stripe transfer id, null for manual payouts
+  payoutError              String? // why the last automatic attempt failed
+  payoutNote               String? // manual payout reference (e-transfer, cash)
+  payoutPaidAt             DateTime?
+  payoutRecordedById       String?
   cancelledAt              DateTime?
   cancellationChargeAmount Int             @default(0) // amount the parent forfeits (total - refund)
   // Refund outcome, resolved by the tiered policy at cancellation time.
@@ -424,6 +442,7 @@ model Booking {
   sitter           User                 @relation("SitterBookings", fields: [sitterId], references: [id])
   createdByAdmin   User?                @relation("AdminCreatedBookings", fields: [createdByAdminId], references: [id])
   paidRecordedBy   User?                @relation("BookingPaymentsRecorded", fields: [paidRecordedById], references: [id])
+  payoutRecordedBy User?                @relation("BookingPayoutsRecorded", fields: [payoutRecordedById], references: [id])
   availabilitySlot AvailabilitySlot     @relation(fields: [availabilitySlotId], references: [id])
   messages         Message[]
   reports          Report[]
@@ -435,6 +454,20 @@ model Booking {
   @@index([status])
   @@index([parentId])
   @@index([sitterId])
+  @@index([payoutStatus])
+}
+
+// Where a completed booking's sitter money stands.
+enum PayoutStatus {
+  OWED // completed, nothing sent yet
+  BLOCKED // sitter can't receive a Stripe transfer yet (onboarding incomplete)
+  FAILED // Stripe rejected the transfer
+  PAID
+}
+
+enum PayoutMethod {
+  STRIPE
+  MANUAL
 }
 
 // A parent's request for a time no sitter has published availability for. It is

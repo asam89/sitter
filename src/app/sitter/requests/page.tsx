@@ -6,6 +6,7 @@ import { computePrice, effectiveRate, isLastMinute } from "@/lib/pricing";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, ButtonLink, Card, EmptyState, PageTitle } from "@/components/ui";
 import { dt, money, requestRef } from "@/lib/format";
+import { serviceAddress } from "@/lib/verification";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,21 @@ export default async function SitterRequestsPage() {
       where: { status: "OPEN", startTime: { gt: new Date() } },
       orderBy: { startTime: "asc" },
       include: {
-        parent: { select: { parentProfile: { select: { city: true } } } },
+        // Sitters need the location to judge travel before picking a request
+        // up. This board is only visible to listed (vetted) sitters.
+        parent: {
+          select: {
+            parentProfile: {
+              select: {
+                streetAddress: true,
+                unit: true,
+                city: true,
+                province: true,
+                postalCode: true,
+              },
+            },
+          },
+        },
       },
     }),
     getBusinessSettings(),
@@ -100,10 +115,12 @@ export default async function SitterRequestsPage() {
                       {r.numberOfChildren} child
                       {r.numberOfChildren === 1 ? "" : "ren"}, aged{" "}
                       {r.childrenAgeRange}
-                      {r.parent.parentProfile?.city
-                        ? ` · ${r.parent.parentProfile.city}`
-                        : ""}
                     </p>
+                    {serviceAddress(r.parent.parentProfile) && (
+                      <p className="mt-1 text-sm text-slate-600">
+                        {serviceAddress(r.parent.parentProfile)}
+                      </p>
+                    )}
                     {r.notes && (
                       <p className="mt-1 text-sm text-slate-500">
                         “{r.notes}”
