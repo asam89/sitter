@@ -33,6 +33,19 @@ export const adminCreateUserSchema = z.object({
     .optional(),
 });
 
+// Turning a SITTER account into a working sitter: the rate is what the profile
+// can't exist without, since every price snapshot is taken from it.
+export const activateSitterSchema = z.object({
+  userId: z.string().min(1),
+  listedPayRate: z.coerce
+    .number()
+    .int()
+    .min(1, "Set the sitter's hourly rate.")
+    .max(500, "That rate looks too high — check it."),
+  city: z.string().trim().max(120).optional().or(z.literal("")),
+  list: z.boolean(),
+});
+
 // Publishing waiver/terms text. The version label is how acceptances are
 // traced, so it has to be short, unique and human-readable.
 export const termsPublishSchema = z.object({

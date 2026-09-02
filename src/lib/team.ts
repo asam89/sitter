@@ -22,9 +22,13 @@ export const TEAM_GROUPS: TeamGroup[] = [
     id: "evaluators",
     heading: "Who evaluates our babysitters",
     blurb:
-      "Every applicant is reviewed and interviewed by our evaluation team — a group of Early Childhood Educators (ECEs), OCT-certified teachers, and trusted community members. They meet each sitter before anyone is vetted and listed.",
+      "Every applicant is reviewed and interviewed by our evaluation team — a group of Early Childhood Educators (ECEs), OCT-certified teachers, and trusted community members. They meet each sitter before anyone is vetted and listed, and our administrator oversees that review and the day-to-day running of Ri'aya.",
     members: [
       { name: "Marya Khan", title: "Application Evaluator" },
+      {
+        name: "Maryam Saleem",
+        title: "Administrator — Application Review & Operations",
+      },
     ],
   },
   {
@@ -47,7 +51,6 @@ Availability
 • School Year: Weekends and after school (depending on location)
 • Winter Break: Full availability`,
       },
-      { name: "Maryam Saleem", title: "Senior Babysitter" },
     ],
   },
 ];

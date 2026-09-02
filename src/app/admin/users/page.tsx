@@ -10,6 +10,7 @@ import { RoleForm } from "./RoleForm";
 import { UserSuspendButton } from "./UserSuspendButton";
 import { NewUserForm } from "./NewUserForm";
 import { InviteButton } from "./InviteButton";
+import { ActivateSitterForm } from "./ActivateSitterForm";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,11 @@ export default async function AdminUsersPage({
       },
       orderBy: [{ role: "asc" }, { createdAt: "desc" }],
       take: 200,
+      include: {
+        sitterProfile: {
+          select: { isListed: true, listedPayRate: true, city: true },
+        },
+      },
     }),
     prisma.adminAuditLog.findMany({
       orderBy: { createdAt: "desc" },
@@ -174,6 +180,12 @@ export default async function AdminUsersPage({
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge color={ROLE_COLOR[u.role]}>{u.role}</Badge>
+                  {u.role === "SITTER" && !u.sitterProfile && (
+                    <Badge color="amber">NOT ACTIVE</Badge>
+                  )}
+                  {u.sitterProfile?.isListed && (
+                    <Badge color="green">LISTED</Badge>
+                  )}
                   {u.suspended && <Badge color="red">SUSPENDED</Badge>}
                 </div>
               </div>
@@ -186,6 +198,15 @@ export default async function AdminUsersPage({
                   )}
                 </div>
               </div>
+              {u.role === "SITTER" && (
+                <ActivateSitterForm
+                  userId={u.id}
+                  hasProfile={!!u.sitterProfile}
+                  rate={u.sitterProfile?.listedPayRate ?? null}
+                  city={u.sitterProfile?.city ?? null}
+                  isListed={u.sitterProfile?.isListed ?? false}
+                />
+              )}
             </Card>
           ))}
         </div>

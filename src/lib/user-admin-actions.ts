@@ -6,9 +6,13 @@ import { redirect } from "next/navigation";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { adminCreateUserSchema } from "@/lib/validation";
+import { adminCreateUserSchema, activateSitterSchema } from "@/lib/validation";
 import { sendAccountSetupInvite } from "@/lib/password-reset";
 import { notifyAdminsOfSignup } from "@/lib/admin-notifications";
+import {
+  notifySitterListed,
+  notifySitterVetted,
+} from "@/lib/sitter-account-notifications";
 
 // Account administration: who can sign in, and who has Admin privileges.
 //
@@ -88,7 +92,109 @@ export async function setUserRole(
 
   revalidatePath("/admin/users");
   revalidatePath("/admin");
+
+  // The role alone doesn't make someone a working sitter: without a
+  // SitterProfile they can't publish hours and can't be booked, which used to
+  // leave silently dead accounts. Say so instead of reporting success.
+  if (role === "SITTER") {
+    const profile = await prisma.sitterProfile.findUnique({
+      where: { userId: target.id },
+      select: { id: true },
+    });
+    if (!profile) {
+      return {
+        ok:
+          `${target.name} is now a sitter — finish with "Activate as a ` +
+          `sitter" below to set their rate, or they can't publish hours or ` +
+          `be booked.`,
+      };
+    }
+  }
   return { ok: `${target.name} is now ${role.toLowerCase()}.` };
+}
+
+// Gives a SITTER account the vetted SitterProfile it needs to actually work:
+// publish availability, be booked, be paid. Used for sitters Admin vetted off
+// the app (promoted from a parent account, or created before applications
+// existed), so they never went through /sitter/apply.
+//
+// Listing stays a separate decision — activating alone doesn't make anyone
+// publicly bookable unless the Admin ticks it here.
+export async function activateSitter(
+  _prev: UserAdminState,
+  fd: FormData,
+): Promise<UserAdminState> {
+  const admin = await requireRole("ADMIN");
+  const parsed = activateSitterSchema.safeParse({
+    userId: fd.get("userId"),
+    listedPayRate: fd.get("listedPayRate"),
+    city: fd.get("city") ?? "",
+    list: fd.get("list") === "on",
+  });
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "Check the details.",
+    };
+  }
+  const { userId, listedPayRate, city, list } = parsed.data;
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { sitterProfile: { select: { id: true, isListed: true } } },
+  });
+  if (!target) return { error: "That account no longer exists." };
+  if (target.role !== "SITTER") {
+    return { error: `${target.name} isn't a sitter account — change the role first.` };
+  }
+  if (target.suspended) {
+    return { error: `${target.name} is suspended — un-suspend them first.` };
+  }
+
+  const wasListed = target.sitterProfile?.isListed ?? false;
+  if (target.sitterProfile) {
+    await prisma.sitterProfile.update({
+      where: { id: target.sitterProfile.id },
+      data: { listedPayRate, city: city || null, isListed: list },
+    });
+  } else {
+    await prisma.sitterProfile.create({
+      data: {
+        userId: target.id,
+        listedPayRate,
+        city: city || null,
+        isListed: list,
+      },
+    });
+  }
+
+  await prisma.adminAuditLog.create({
+    data: {
+      actorId: admin.id,
+      targetUserId: target.id,
+      action: list ? "sitter:activate+list" : "sitter:activate",
+      detail: `${target.email} @ $${listedPayRate}/h`,
+    },
+  });
+
+  // Best-effort: the profile exists either way.
+  if (!target.sitterProfile) {
+    await notifySitterVetted(target.email, target.name).catch((e) =>
+      console.error("[activate-sitter] vetted email failed:", e),
+    );
+  }
+  if (list && !wasListed) {
+    await notifySitterListed(target.email, target.name).catch((e) =>
+      console.error("[activate-sitter] listed email failed:", e),
+    );
+  }
+
+  revalidatePath("/admin/users");
+  revalidatePath("/admin");
+  return {
+    ok: list
+      ? `${target.name} is active and listed — parents can book them once they publish hours.`
+      : `${target.name} is active at $${listedPayRate}/h. List them on the dashboard when you're ready.`,
+  };
 }
 
 // An Admin creating an account for a family or sitter who signed up by phone or
