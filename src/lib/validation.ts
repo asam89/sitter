@@ -268,6 +268,14 @@ export const campaignSchema = z.object({
   body: z.string().trim().min(20, "Write the message.").max(20000),
 });
 
+export const smsCampaignSchema = z.object({
+  body: z
+    .string()
+    .trim()
+    .min(10, "Write the message.")
+    .max(280, "Keep a broadcast text under 280 characters."),
+});
+
 export const newsletterSignupSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
   source: z.string().trim().max(40).optional().default(""),
