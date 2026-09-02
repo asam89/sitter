@@ -10,6 +10,7 @@ import {
   PageTitle,
 } from "@/components/ui";
 import { BOOKING_STATUS_COLOR, REPORT_STATUS_COLOR } from "@/lib/status";
+import { sittersWithCurrentVsc } from "@/lib/screening";
 import { bookingRef, dt, money, moneyHr } from "@/lib/format";
 import {
   ListingToggle,
@@ -54,6 +55,7 @@ export default async function AdminDashboard() {
     revenueAgg,
     rushBookings,
     openRequests,
+    pendingScreenings,
   ] = await Promise.all([
     prisma.sitterApplication.count({
       where: { status: { in: ["APPLIED", "UNDER_REVIEW", "INTERVIEW"] } },
@@ -107,7 +109,12 @@ export default async function AdminDashboard() {
     prisma.bookingRequest.count({
       where: { status: "OPEN", startTime: { gt: new Date() } },
     }),
+    prisma.sitterScreening.count({ where: { status: "PENDING" } }),
   ]);
+
+  // Which sitters Ri'aya can currently stand behind. A listed sitter without
+  // one is the thing an Admin most needs to see from here.
+  const vscOnFile = await sittersWithCurrentVsc(sitters.map((sp) => sp.userId));
 
   const bookedRevenue = revenueAgg._sum.totalAmount ?? 0;
   const feeRevenue = revenueAgg._sum.platformFeeAmount ?? 0;
@@ -145,6 +152,9 @@ export default async function AdminDashboard() {
           </ButtonLink>
           <ButtonLink href="/admin/payouts" variant="secondary">
             Sitter payouts
+          </ButtonLink>
+          <ButtonLink href="/admin/screening" variant="secondary">
+            Background checks{pendingScreenings > 0 && ` (${pendingScreenings})`}
           </ButtonLink>
           <ButtonLink href="/admin/errors" variant="secondary">
             Failures &amp; reports
@@ -187,6 +197,11 @@ export default async function AdminDashboard() {
                         {sp.isListed ? "Listed" : "Unlisted"}
                       </Badge>
                       {sp.user.suspended && <Badge color="red">Suspended</Badge>}
+                      {!vscOnFile.has(sp.user.id) && (
+                        <Link href="/admin/screening">
+                          <Badge color="red">No current VSC</Badge>
+                        </Link>
+                      )}
                       <span className="text-xs text-slate-500">
                         {upcomingHours(sp.slots, "OPEN")}h open ·{" "}
                         {upcomingHours(sp.slots, "BOOKED")}h booked

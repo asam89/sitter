@@ -182,6 +182,84 @@ model User {
   bookingsCreated      Booking[]                @relation("AdminCreatedBookings")
   paymentsRecorded     Booking[]                @relation("BookingPaymentsRecorded")
   payoutsRecorded      Booking[]                @relation("BookingPayoutsRecorded")
+  screenings           SitterScreening[]        @relation("SitterScreenings")
+  screeningsUploaded   SitterScreening[]        @relation("ScreeningUploader")
+  screeningsVerified   SitterScreening[]        @relation("ScreeningVerifier")
+  screeningViews       ScreeningAccessLog[]     @relation("ScreeningViewer")
+}
+
+enum ScreeningCheckType {
+  VULNERABLE_SECTOR // police vulnerable sector check (VSC)
+  POLICE_RECORD // criminal record check without the vulnerable sector screen
+  CPR
+  FIRST_AID
+  REFERENCE
+  OTHER
+}
+
+enum ScreeningStatus {
+  PENDING // uploaded, nobody has confirmed it yet
+  VERIFIED // an Admin read the document and vouched for it
+  REJECTED // not acceptable (wrong check, expired on arrival, unreadable)
+}
+
+// A background/credential check held on file for a sitter — most importantly a
+// police vulnerable sector check.
+//
+// The document itself is encrypted at rest (AES-256-GCM, see lib/screening.ts)
+// and only ever leaves the server through an Admin-only streaming route that
+// writes a ScreeningAccessLog row. Nothing here is public: parents only ever
+// see a derived "vulnerable sector check verified" badge.
+model SitterScreening {
+  id           String             @id @default(cuid())
+  sitterUserId String
+  checkType    ScreeningCheckType
+  // Issuing body as printed on the document, e.g. "Peel Regional Police".
+  issuer       String?
+  issuedOn     DateTime?
+  // When Ri'aya wants it re-done. A check past this date stops counting as
+  // current, which is what the expiry alerts and the parent badge key off.
+  renewBy      DateTime?
+  status       ScreeningStatus    @default(PENDING)
+  // Admin-only notes. Never rendered outside /admin.
+  adminNotes   String?
+
+  // Encrypted blob in private storage. Null once the document is destroyed;
+  // the record (who verified what, and when) survives deletion.
+  storagePath  String?
+  originalMime String?
+  originalName String?
+  fileBytes    Int?
+  deletedAt    DateTime?
+
+  uploadedByUserId  String?
+  verifiedByAdminId String?
+  verifiedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  sitter     User                 @relation("SitterScreenings", fields: [sitterUserId], references: [id], onDelete: Cascade)
+  uploadedBy User?                @relation("ScreeningUploader", fields: [uploadedByUserId], references: [id])
+  verifiedBy User?                @relation("ScreeningVerifier", fields: [verifiedByAdminId], references: [id])
+  accesses   ScreeningAccessLog[]
+
+  @@index([sitterUserId])
+  @@index([status])
+  @@index([renewBy])
+}
+
+// Every decryption of a screening document, so "who looked at this person's
+// police check" is answerable. Written before the bytes are streamed.
+model ScreeningAccessLog {
+  id          String   @id @default(cuid())
+  screeningId String
+  adminId     String
+  viewedAt    DateTime @default(now())
+
+  screening SitterScreening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  admin     User            @relation("ScreeningViewer", fields: [adminId], references: [id])
+
+  @@index([screeningId])
 }
 
 // Hashed one-time verification codes for email/phone. The raw code is never
