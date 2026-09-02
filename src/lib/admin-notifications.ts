@@ -28,7 +28,8 @@ type AdminAlert =
   | "APPLICATION"
   | "BOOKING"
   | "REQUEST"
-  | "ERROR";
+  | "ERROR"
+  | "INBOUND";
 
 function appUrl(path: string): string {
   const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(
@@ -189,6 +190,26 @@ export async function notifyAdminsOfSignup(u: {
             `application. They stay unlisted until you list them: ${appUrl("/admin")}`
           : `They still need to submit a vetting application — you'll get another ` +
             `alert when they do: ${appUrl("/admin/applications")}`),
+  );
+}
+
+// Somebody replied to one of our texts. Twilio drops inbound messages unless
+// they reach a person, so the reply is forwarded to the Admin inbox.
+export async function notifyAdminsOfInboundText(m: {
+  from: string;
+  body: string;
+  senderName: string | null;
+  senderEmail: string | null;
+}): Promise<void> {
+  await alertAdmins(
+    "INBOUND",
+    `Text reply from ${m.senderName ?? m.from}`,
+    `Someone replied to a Ri'aya text.\n\n` +
+      `From: ${m.from}\n` +
+      (m.senderName ? `Account: ${m.senderName} (${m.senderEmail})\n` : "") +
+      `Received: ${dt(new Date())}\n\n` +
+      `${m.body}\n\n` +
+      `Reply by texting or calling them back — the app does not send replies.`,
   );
 }
 

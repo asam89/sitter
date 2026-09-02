@@ -1,17 +1,24 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { campaignAudience, sendCampaign } from "@/lib/campaign-actions";
+import {
+  campaignAudience,
+  sendCampaign,
+  sendSmsCampaign,
+  smsCampaignAudience,
+} from "@/lib/campaign-actions";
 import { AUDIENCE_LABEL, IMPLIED_CONSENT_MONTHS, campaignFooter } from "@/lib/campaign";
 import { Card, EmptyState, PageTitle } from "@/components/ui";
 import { dt } from "@/lib/format";
 import { BroadcastForm } from "./BroadcastForm";
+import { SmsBroadcastForm } from "./SmsBroadcastForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminBroadcastPage() {
   await requireRole("ADMIN");
-  const [audience, campaigns] = await Promise.all([
+  const [audience, smsAudience, campaigns] = await Promise.all([
     campaignAudience(),
+    smsCampaignAudience(),
     prisma.emailCampaign.findMany({
       orderBy: { sentAt: "desc" },
       take: 20,
@@ -22,8 +29,8 @@ export default async function AdminBroadcastPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageTitle
-        title="Email parents"
-        subtitle="Newsletter subscribers, or every parent you already have a relationship with."
+        title="Message parents and sitters"
+        subtitle="Email or text the people who consented to hear from Ri'aya."
       />
 
       <Card>
@@ -52,6 +59,14 @@ export default async function AdminBroadcastPage() {
         impliedMonths={IMPLIED_CONSENT_MONTHS}
       />
 
+      <SmsBroadcastForm
+        action={sendSmsCampaign}
+        newsletterCount={smsAudience.newsletter}
+        registeredCount={smsAudience.registered}
+        reachableCount={smsAudience.reachable}
+        impliedMonths={IMPLIED_CONSENT_MONTHS}
+      />
+
       <div className="space-y-2">
         <h2 className="font-semibold">Past sends</h2>
         {campaigns.length === 0 ? (
@@ -61,7 +76,8 @@ export default async function AdminBroadcastPage() {
             <Card key={c.id}>
               <p className="font-medium">{c.subject}</p>
               <p className="mt-1 text-xs text-slate-500">
-                {dt(c.sentAt)} · {c.sentBy.name} · {AUDIENCE_LABEL[c.audience]}{" "}
+                {dt(c.sentAt)} · {c.sentBy.name} · {c.channel} ·{" "}
+                {AUDIENCE_LABEL[c.audience]}{" "}
                 · {c.recipientCount} delivered
                 {c.failureCount > 0 ? `, ${c.failureCount} failed` : ""} ·{" "}
                 {c.suppressedCount} skipped

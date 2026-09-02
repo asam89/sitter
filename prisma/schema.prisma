@@ -155,6 +155,9 @@ model User {
   newsletterConsentText String?
   newsletterOptOutAt    DateTime?
   unsubscribeToken      String?   @unique
+  // Texting is opted out of separately: replying STOP must silence texts
+  // without also cancelling email.
+  smsOptOutAt           DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -617,6 +620,11 @@ enum CampaignAudienceKind {
   REGISTERED
 }
 
+enum CampaignChannel {
+  EMAIL
+  SMS
+}
+
 // Record of an Admin changing another account's role or suspension, so a
 // privilege change is always attributable after the fact.
 model AdminAuditLog {
@@ -643,6 +651,7 @@ model EmailCampaign {
   body            String
   sentByUserId    String
   audience        CampaignAudienceKind @default(NEWSLETTER)
+  channel         CampaignChannel      @default(EMAIL)
   recipientCount  Int                  @default(0)
   failureCount    Int                  @default(0)
   suppressedCount Int                  @default(0)
