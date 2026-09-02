@@ -39,6 +39,11 @@ for development — in production set it explicitly, or rotating
 `NEXTAUTH_SECRET` makes existing documents unreadable. A database dump on its
 own is useless without it.
 
+The private storage directory is `KYC_PRIVATE_DIR`, which defaults to
+`.private/` inside the working directory. In a container that is ephemeral, so
+point it at a persistent volume (riaya.ca uses `/data/private` on the `uploads`
+volume) or every stored check is lost on the next rebuild.
+
 ## Who sees what
 
 - **Admins** — everything, including the document, and every view is logged.
