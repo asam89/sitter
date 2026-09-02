@@ -25,6 +25,13 @@ export function dt(d: Date | string): string {
   return fmt.format(new Date(d));
 }
 
+const dateFmt = new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" });
+
+// Date with no time of day — issue/renewal dates on documents.
+export function d(value: Date | string): string {
+  return dateFmt.format(new Date(value));
+}
+
 const timeFmt = new Intl.DateTimeFormat("en-CA", { timeStyle: "short" });
 
 export function time(d: Date | string): string {

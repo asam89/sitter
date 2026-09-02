@@ -13,6 +13,7 @@ import {
   PageTitle,
 } from "@/components/ui";
 import { dt, moneyHr } from "@/lib/format";
+import { sittersWithCurrentVsc } from "@/lib/screening";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,9 @@ export default async function SchedulePage() {
     },
     orderBy: { listedPayRate: "asc" },
   });
+  // Families see only that a check is on file — never the document, the police
+  // service, or any dates from it.
+  const vscOnFile = await sittersWithCurrentVsc(sitters.map((sp) => sp.userId));
 
   return (
     <div className="space-y-6">
@@ -66,6 +70,11 @@ export default async function SchedulePage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-semibold">{sp.user.name}</h2>
+                  {vscOnFile.has(sp.userId) && (
+                    <p className="mt-1 text-xs font-medium text-emerald-700">
+                      Police vulnerable sector check verified by Ri&apos;aya
+                    </p>
+                  )}
                   {sp.bio && (
                     <p className="mt-1 text-sm text-slate-600">{sp.bio}</p>
                   )}

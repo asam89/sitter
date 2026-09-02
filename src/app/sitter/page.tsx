@@ -13,6 +13,7 @@ import {
   buttonClass,
 } from "@/components/ui";
 import { syncConnectAccount } from "@/lib/payouts";
+import { sittersWithCurrentVsc } from "@/lib/screening";
 import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
 import { PublicProfileCard } from "./PublicProfileCard";
 import { dt, money, moneyHr } from "@/lib/format";
@@ -55,6 +56,7 @@ export default async function SitterDashboard({
     orderBy: { dateTime: "desc" },
     include: { parent: { select: { name: true } } },
   });
+  const hasCurrentVsc = (await sittersWithCurrentVsc([user.id])).has(user.id);
   const pending = bookings.filter((b) => b.status === "REQUESTED");
   const upcoming = bookings.filter((b) =>
     ["APPROVED", "IN_PROGRESS"].includes(b.status),
@@ -171,6 +173,16 @@ export default async function SitterDashboard({
               now so you&apos;re ready when we list you.
             </p>
           )}
+          {!hasCurrentVsc && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              We don&apos;t have a current police vulnerable sector check on
+              file for you.{" "}
+              <Link href="/sitter/screening" className="font-medium underline">
+                Upload it securely
+              </Link>{" "}
+              — it&apos;s encrypted, and families never see the document.
+            </p>
+          )}
           {profile.stripeAccountId && !profile.stripePayoutsEnabled && (
             <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
               Stripe hasn&apos;t enabled payouts on your account yet
@@ -184,6 +196,9 @@ export default async function SitterDashboard({
           <div className="mt-4 flex flex-wrap gap-3">
             <ButtonLink href="/sitter/availability">
               Manage availability ({profile.slots.length} open)
+            </ButtonLink>
+            <ButtonLink href="/sitter/screening" variant="secondary">
+              Checks &amp; certifications
             </ButtonLink>
             {profile.isListed && (
               <ButtonLink href="/sitter/requests" variant="secondary">

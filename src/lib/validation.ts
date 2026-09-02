@@ -283,4 +283,24 @@ export const serviceAddressSchema = z.object({
   postalCode: z.string().trim().min(3, "Enter your postal code.").max(12),
 });
 
+// --- Sitter background checks ---
+
+// Dates come from <input type="date"> so they arrive as "" or "YYYY-MM-DD".
+// An empty renewBy is allowed (a CPR card with no printed expiry), but it then
+// never counts as expiring, which is why Admin is nudged to fill it in.
+const optionalDate = z
+  .string()
+  .trim()
+  .max(10)
+  .optional()
+  .transform((v) => (v ? new Date(`${v}T12:00:00`) : null))
+  .refine((v) => v === null || !Number.isNaN(v.getTime()), "Enter a valid date.");
+
+export const screeningDetailsSchema = z.object({
+  issuer: z.string().trim().max(160).optional().or(z.literal("")),
+  issuedOn: optionalDate,
+  renewBy: optionalDate,
+  adminNotes: z.string().trim().max(2000).optional().or(z.literal("")),
+});
+
 export { linesToArray };
