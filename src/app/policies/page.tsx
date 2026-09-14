@@ -6,7 +6,8 @@ import { refundPolicyLines } from "@/lib/cancellation";
 import { money } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Booking policies & terms — Ri'aya Babysitters",
+  title: "Booking policies & terms",
+  alternates: { canonical: "/policies" },
   description:
     "How Ri'aya bookings work: minimum session length, pricing and fees, cancellation and refund tiers, the liability waiver, and how to reach us.",
 };
