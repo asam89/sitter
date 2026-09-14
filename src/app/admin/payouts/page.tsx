@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { adminMarkPayoutPaid, adminPayoutBooking } from "@/lib/actions";
+import { adminMarkPayoutPaid } from "@/lib/actions";
 import { stripe, stripeEnabled } from "@/lib/stripe";
-import { Badge, Card, EmptyState, PageTitle, buttonClass } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  PageTitle,
+  buttonClass,
+} from "@/components/ui";
 import { bookingRef, dt, money } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +28,11 @@ const STATUS_COLOR: Record<string, "green" | "amber" | "red"> = {
   PAID: "green",
 };
 
-// Money Ri'aya owes sitters for work already done, and what's actually left the
-// account. Card money lands in Ri'aya's Stripe balance first, pays out to the
-// chequing account on Stripe's schedule, and the sitter's share is transferred
-// out of that same balance — so a payout can be owed while the cash is still in
-// transit.
+// Money Ri'aya owes sitters for work already done, and what's actually been
+// sent. Card money lands in Ri'aya's Stripe balance and pays out to the
+// chequing account on Stripe's schedule; sitters are then paid by Interac
+// e-Transfer from that account and the transfer is recorded here — so a payout
+// can be owed while the card money is still in transit.
 export default async function AdminPayoutsPage() {
   await requireRole("ADMIN");
 
@@ -35,19 +41,7 @@ export default async function AdminPayoutsPage() {
       where: { status: "COMPLETED", payoutPaidAt: null },
       orderBy: { completedAt: "asc" },
       include: {
-        sitter: {
-          select: {
-            name: true,
-            email: true,
-            sitterProfile: {
-              select: {
-                stripeAccountId: true,
-                stripePayoutsEnabled: true,
-                stripeRequirementsDue: true,
-              },
-            },
-          },
-        },
+        sitter: { select: { name: true, email: true } },
       },
     }),
     prisma.booking.findMany({
@@ -86,7 +80,7 @@ export default async function AdminPayoutsPage() {
     <div className="space-y-6">
       <PageTitle
         title="Sitter payouts"
-        subtitle="What Ri'aya owes sitters for completed bookings, and what has already been sent."
+        subtitle="What Ri'aya owes sitters for completed bookings, and what has already been e-Transferred."
       />
 
       <Card>
@@ -109,8 +103,8 @@ export default async function AdminPayoutsPage() {
                   {money(balance.available)}
                 </p>
                 <p className="text-xs text-slate-500">
-                  Payable now, and paid to your chequing account on Stripe&apos;s
-                  schedule.
+                  Payable now, and paid to your chequing account on
+                  Stripe&apos;s schedule.
                 </p>
               </div>
               <div>
@@ -127,13 +121,11 @@ export default async function AdminPayoutsPage() {
             </>
           )}
         </div>
-        {!stripeEnabled && (
-          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Stripe isn&apos;t configured, so no card money is being collected and
-            no payout can be sent automatically. Settle these by e-Transfer and
-            record them here.
-          </p>
-        )}
+        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          Sitters are paid by Interac e-Transfer to their account email. Send
+          the transfer from the Ri&apos;aya chequing account, then record it
+          here.
+        </p>
       </Card>
 
       <section className="space-y-3">
@@ -144,12 +136,6 @@ export default async function AdminPayoutsPage() {
           outstanding.map((b) => {
             const amount =
               b.payoutAmount ?? b.totalAmount - b.platformFeeAmount;
-            const profile = b.sitter.sitterProfile;
-            const stripeReady =
-              stripeEnabled &&
-              Boolean(profile?.stripeAccountId) &&
-              !profile?.stripeAccountId?.startsWith("mock_acct_") &&
-              profile?.stripePayoutsEnabled;
             return (
               <Card key={b.id}>
                 <div className="flex flex-wrap items-center gap-2">
@@ -162,7 +148,12 @@ export default async function AdminPayoutsPage() {
                   >
                     {bookingRef(b.bookingNumber)}
                   </Link>
-                  <span className="text-sm">{b.sitter.name}</span>
+                  <span className="text-sm">
+                    {b.sitter.name}{" "}
+                    <span className="text-slate-500">
+                      · e-Transfer to {b.sitter.email}
+                    </span>
+                  </span>
                   <span className="text-sm text-slate-500">
                     session {dt(b.dateTime)}
                   </span>
@@ -171,43 +162,26 @@ export default async function AdminPayoutsPage() {
                   </span>
                 </div>
 
-                {!stripeReady && (
-                  <p className="mt-2 text-xs text-amber-800">
-                    {profile?.stripeAccountId
-                      ? profile.stripeRequirementsDue
-                        ? `Stripe still needs: ${profile.stripeRequirementsDue}.`
-                        : "Stripe hasn't enabled payouts on this sitter's account yet."
-                      : "This sitter hasn't connected a Stripe payout account — pay them by e-Transfer and record it."}
-                  </p>
-                )}
                 {b.payoutError && (
                   <p className="mt-1 text-xs text-red-700">{b.payoutError}</p>
                 )}
 
                 <div className="mt-3 flex flex-wrap items-end gap-3">
-                  {stripeReady && (
-                    <form action={adminPayoutBooking}>
-                      <input type="hidden" name="bookingId" value={b.id} />
-                      <button type="submit" className={buttonClass()}>
-                        Send {money(amount)} via Stripe
-                      </button>
-                    </form>
-                  )}
-                  <form action={adminMarkPayoutPaid} className="flex items-end gap-2">
+                  <form
+                    action={adminMarkPayoutPaid}
+                    className="flex items-end gap-2"
+                  >
                     <input type="hidden" name="bookingId" value={b.id} />
                     <label className="text-xs text-slate-600">
-                      Paid outside Stripe
+                      e-Transfer sent
                       <input
                         name="note"
-                        placeholder="e-Transfer ref / note"
+                        placeholder="Interac reference / note"
                         className="mt-1 block rounded-lg border border-slate-300 px-2 py-1 text-sm"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className={buttonClass("secondary")}
-                    >
-                      Mark paid
+                    <button type="submit" className={buttonClass()}>
+                      Mark paid {money(amount)}
                     </button>
                   </form>
                 </div>

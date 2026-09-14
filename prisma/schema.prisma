@@ -189,6 +189,25 @@ model User {
   screeningsUploaded   SitterScreening[]        @relation("ScreeningUploader")
   screeningsVerified   SitterScreening[]        @relation("ScreeningVerifier")
   screeningViews       ScreeningAccessLog[]     @relation("ScreeningViewer")
+  pipelineNudges       PipelineNudge[]
+}
+
+enum PipelineNudgeKind {
+  SITTER_SCHEDULE // listed sitter with an empty calendar
+  APPLICANT_NEXT_STEP // application waiting on an interview
+  APPLICATION_UNFINISHED // sitter account that never submitted an application
+}
+
+// One row per automated nudge email so the daily sweep can throttle: a person
+// is reminded about the same thing at most once per cooldown window.
+model PipelineNudge {
+  id     String            @id @default(cuid())
+  userId String
+  kind   PipelineNudgeKind
+  sentAt DateTime          @default(now())
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, sentAt])
 }
 
 enum ScreeningCheckType {

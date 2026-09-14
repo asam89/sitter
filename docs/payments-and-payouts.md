@@ -3,6 +3,14 @@
 How money moves through Ri'aya: what the parent is charged, where it sits, when
 it reaches the business chequing account, and how the sitter gets their share.
 
+> **Current operating mode: e-Transfer payouts.** Parents pay by card through
+> Stripe; sitters are paid by Interac e-Transfer from the Ri'aya chequing
+> account and each transfer is recorded on `/admin/payouts` ("e-Transfer sent →
+> Mark paid"). The Stripe Connect / Express flow described below is implemented
+> but not exposed to sitters — there is no "Connect payouts" button on the
+> sitter dashboard and no "Send via Stripe" button for admins. Re-enabling it is
+> a UI change only; the server actions and webhook handling remain in place.
+
 ## Do we need a second Stripe account?
 
 No. **One** Stripe account for Ri'aya, with **Connect** enabled.
