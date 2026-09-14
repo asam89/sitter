@@ -1,6 +1,14 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { SignupForm } from "./SignupForm";
 import { PageTitle } from "@/components/ui";
+
+export const metadata: Metadata = {
+  title: "Create an account",
+  description:
+    "Sign up as a parent to book vetted Ri'aya babysitters, or apply to join our team of sitters.",
+  alternates: { canonical: "/signup" },
+};
 
 export const dynamic = "force-dynamic";
 

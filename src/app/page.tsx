@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getSession } from "@/lib/session";
 import { NewsletterSignup } from "@/components/NewsletterSignup";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 const PILLARS = [
   {

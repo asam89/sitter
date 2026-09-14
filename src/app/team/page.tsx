@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { TEAM_GROUPS, initials, type TeamMember } from "@/lib/team";
 
 export const metadata: Metadata = {
-  title: "Meet our team — Ri'aya Babysitters",
+  title: "Meet our team",
+  alternates: { canonical: "/team" },
   description:
     "The Early Childhood Educators, OCT-certified teachers, and trusted community members who evaluate and approve every Ri'aya babysitter.",
 };

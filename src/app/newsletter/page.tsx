@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import { NewsletterSignup } from "@/components/NewsletterSignup";
 import { Card, PageTitle } from "@/components/ui";
+
+export const metadata: Metadata = {
+  title: "Newsletter",
+  description:
+    "Sitter availability, new-sitter announcements and childcare tips from Ri'aya Babysitters.",
+  alternates: { canonical: "/newsletter" },
+};
 
 // Landing page for the subscribe links we put in emails, so the call to action
 // always ends in an explicit sign-up rather than an automatic subscription.
