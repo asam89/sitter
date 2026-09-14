@@ -41,8 +41,8 @@ liability waiver on every booking.
 - Weekly availability grid, published hour by hour.
 - Accept or decline booking requests; the parent's name, phone, email and full
   service address are visible so they can coordinate and chase the waiver.
-- Stripe Express onboarding to receive payouts directly to their own bank
-  account.
+- Paid by Interac e-Transfer to their account email after each completed
+  booking; no bank details are collected.
 
 ### For admins
 - Full application review queue with interview scheduling and
@@ -60,9 +60,8 @@ liability waiver on every booking.
   preserves who accepted which version.
 - Screening dashboard: check type, issuing police service, issue and renew-by
   dates, verifier and timestamp.
-- Payouts dashboard: what's owed per completed booking, what's been
-  transferred, and which sitters can't be paid because onboarding is
-  incomplete.
+- Payouts dashboard: what's owed per completed booking and which e-Transfers
+  have been sent, with the Interac reference.
 - Email and SMS broadcast with consent tracking, an automatic "Reply STOP to
   opt out", and campaign history.
 - Newsletter sign-up with double opt-in.
@@ -74,10 +73,11 @@ liability waiver on every booking.
 The parent's card is charged through Stripe — card details go straight from the
 browser to Stripe, so nothing sensitive is ever stored in this database. Funds
 land in Ri'aya's Stripe balance and pay out weekly to the Ri'aya chequing
-account. The sitter's share is transferred to their own Stripe Express account
-after the booking is completed; the platform fee stays with Ri'aya. Stripe is
-live in production: real charges, webhook confirmation and Connect onboarding
-are all verified. See
+account. The sitter's share is sent by Interac e-Transfer from that chequing
+account after the booking is completed and recorded on `/admin/payouts`; the
+platform fee stays with Ri'aya. Stripe is live in production for parent card
+charges with webhook confirmation. (Stripe Connect payouts to sitters exist in
+the code but are switched off in favour of e-Transfer.) See
 [`docs/payments-and-payouts.md`](docs/payments-and-payouts.md).
 
 ## Communications
@@ -111,7 +111,8 @@ are all verified. See
 - The Twilio number is a Michigan one; a 416 number costs about US$1.15/month.
 - No real card payment has run through the live parent flow yet — the first
   genuine booking will be the proof.
-- Sitters must each complete Stripe onboarding before they can be paid.
+- Sitter payouts are manual e-Transfers recorded by an admin; there is no
+  automated payout run.
 
 ## How it works
 
