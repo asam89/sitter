@@ -3,8 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { differenceInMinutes } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import {
+  remainders,
+  resolveWindow,
+  slotDurationHours,
+} from "@/lib/slot-window";
 import { requireUser, requireRole } from "@/lib/session";
 import { getBusinessSettings, updateBusinessSettings } from "@/lib/settings";
 import {
@@ -66,10 +70,6 @@ import {
 function s(fd: FormData, key: string): string {
   const v = fd.get(key);
   return typeof v === "string" ? v : "";
-}
-
-function slotDurationHours(startTime: Date, endTime: Date): number {
-  return Math.max(1, Math.round(differenceInMinutes(endTime, startTime) / 60));
 }
 
 // Evidence captured alongside a waiver acceptance. Behind a proxy the client IP
@@ -613,6 +613,8 @@ export async function createBooking(
 
   const parsed = bookingSchema.safeParse({
     slotId: s(fd, "slotId"),
+    startTime: s(fd, "startTime"),
+    durationHours: s(fd, "durationHours"),
     childrenAgeRange: s(fd, "childrenAgeRange"),
     numberOfChildren: s(fd, "numberOfChildren"),
     notes: s(fd, "notes"),
@@ -638,33 +640,63 @@ export async function createBooking(
 
   const settings = await getBusinessSettings();
   const terms = await getActiveTerms();
-  const duration = slotDurationHours(slot.startTime, slot.endTime);
-  if (duration < settings.minBookingHours) {
+  if (slotDurationHours(slot.startTime, slot.endTime) < settings.minBookingHours) {
     return {
-      error: `Bookings are a minimum of ${settings.minBookingHours} hours — this block is only ${duration}h.`,
+      error: `Bookings are a minimum of ${settings.minBookingHours} hours — this block is shorter than that.`,
     };
   }
-  const lastMinute = isLastMinute(
-    slot.startTime,
-    settings.lastMinuteThresholdHours,
+  const window = resolveWindow(
+    slot,
+    d.startTime || undefined,
+    d.durationHours,
+    settings.minBookingHours,
   );
+  if (!window) {
+    return {
+      error: `Pick a start time inside the block and at least ${settings.minBookingHours} hours that end by ${time(slot.endTime)}.`,
+    };
+  }
+  const duration = window.hours;
+  const lastMinute = isLastMinute(window.start, settings.lastMinuteThresholdHours);
   const price = computePrice(
     effectiveRate(slot.sitterProfile),
     duration,
     lastMinute,
     settings,
-    slot.startTime,
+    window.start,
     d.numberOfChildren,
   );
   const acceptance = waiverAcceptanceContext();
 
-  // Atomically claim the slot so two parents can't book the same window.
-  const claimed = await prisma.availabilitySlot.updateMany({
-    where: { id: slot.id, status: "OPEN" },
-    data: { status: "BOOKED" },
+  // Atomically claim the window so two parents can't book the same hours. The
+  // block shrinks to exactly the booked hours; any hours left over on either
+  // side become their own open blocks so they stay bookable.
+  const claimed = await prisma.$transaction(async (tx) => {
+    const taken = await tx.availabilitySlot.updateMany({
+      where: {
+        id: slot.id,
+        status: "OPEN",
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+      },
+      data: { status: "BOOKED", startTime: window.start, endTime: window.end },
+    });
+    if (taken.count === 0) return false;
+    const leftovers = remainders(slot, window);
+    if (leftovers.length > 0) {
+      await tx.availabilitySlot.createMany({
+        data: leftovers.map((r) => ({
+          sitterProfileId: slot.sitterProfileId,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          isLastMinuteEligible: slot.isLastMinuteEligible,
+        })),
+      });
+    }
+    return true;
   });
-  if (claimed.count === 0) {
-    return { error: "That time slot was just booked." };
+  if (!claimed) {
+    return { error: "Those hours were just booked — pick another time." };
   }
 
   const booking = await prisma.booking.create({
@@ -672,7 +704,7 @@ export async function createBooking(
       parentId: user.id,
       sitterId: slot.sitterProfile.userId,
       availabilitySlotId: slot.id,
-      dateTime: slot.startTime,
+      dateTime: window.start,
       durationHours: duration,
       childrenAgeRange: d.childrenAgeRange,
       numberOfChildren: d.numberOfChildren,

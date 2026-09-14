@@ -140,6 +140,12 @@ export const reviewSchema = z.object({
 
 export const bookingSchema = z.object({
   slotId: z.string().min(1),
+  // Optional: absent means the whole block (older forms / tests).
+  startTime: z.string().optional().or(z.literal("")),
+  durationHours: z.preprocess(
+    (v) => (v === "" || v === undefined ? undefined : Number(v)),
+    z.number().int().min(1).max(24).optional(),
+  ),
   childrenAgeRange: z.string().min(1).max(40),
   numberOfChildren: z.coerce.number().int().min(1).max(10),
   notes: z.string().max(1000).optional().or(z.literal("")),

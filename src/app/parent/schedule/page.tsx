@@ -12,7 +12,7 @@ import {
   EmptyState,
   PageTitle,
 } from "@/components/ui";
-import { dt, moneyHr } from "@/lib/format";
+import { dt, moneyHr, time } from "@/lib/format";
 import { sittersWithCurrentVsc } from "@/lib/screening";
 
 export const dynamic = "force-dynamic";
@@ -93,7 +93,7 @@ export default async function SchedulePage() {
                       href={`/parent/book/${slot.id}`}
                       className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-brand-teal hover:bg-brand-cream"
                     >
-                      {dt(slot.startTime)}
+                      {dt(slot.startTime)} – {time(slot.endTime)}
                       {rush && (
                         <span className="ml-1 text-xs text-amber-700">
                           (last-minute)
