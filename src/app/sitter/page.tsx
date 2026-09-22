@@ -15,6 +15,7 @@ import { sittersWithCurrentVsc } from "@/lib/screening";
 import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
 import { PublicProfileCard } from "./PublicProfileCard";
 import { dt, money, moneyHr } from "@/lib/format";
+import { unreadTeamMessageCount } from "@/lib/team-messages";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export default async function SitterDashboard() {
     include: { parent: { select: { name: true } } },
   });
   const hasCurrentVsc = (await sittersWithCurrentVsc([user.id])).has(user.id);
+  const unreadMessages = await unreadTeamMessageCount(user.id);
   const pending = bookings.filter((b) => b.status === "REQUESTED");
   const upcoming = bookings.filter((b) =>
     ["APPROVED", "IN_PROGRESS"].includes(b.status),
@@ -51,6 +53,25 @@ export default async function SitterDashboard() {
   return (
     <div className="space-y-6">
       <PageTitle title={`Hi, ${user.name}`} subtitle="Your sitter dashboard." />
+
+      <Card className={unreadMessages > 0 ? "border-brand-coral/40" : ""}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Messages from the team</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {unreadMessages > 0
+                ? `You have ${unreadMessages} unread message${unreadMessages === 1 ? "" : "s"}.`
+                : "Announcements and notes from Ri'aya land here."}
+            </p>
+          </div>
+          <ButtonLink
+            href="/sitter/inbox"
+            variant={unreadMessages > 0 ? "primary" : "secondary"}
+          >
+            {unreadMessages > 0 ? `Read (${unreadMessages})` : "Open inbox"}
+          </ButtonLink>
+        </div>
+      </Card>
 
       {/* Vetting / listing status */}
       {/* A sitter created by an Admin is already vetted and has a profile but
