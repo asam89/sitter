@@ -27,9 +27,12 @@ function upcomingHours(
   status: "OPEN" | "BOOKED",
 ): number {
   return slots
-    .filter((s) => (status === "OPEN" ? s.status === "OPEN" : s.status !== "OPEN"))
+    .filter((s) =>
+      status === "OPEN" ? s.status === "OPEN" : s.status !== "OPEN",
+    )
     .reduce(
-      (sum, s) => sum + (s.endTime.getTime() - s.startTime.getTime()) / 3_600_000,
+      (sum, s) =>
+        sum + (s.endTime.getTime() - s.startTime.getTime()) / 3_600_000,
       0,
     );
 }
@@ -144,6 +147,9 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/broadcast" variant="secondary">
             Email parents
           </ButtonLink>
+          <ButtonLink href="/admin/messages" variant="secondary">
+            Message sitters
+          </ButtonLink>
           <ButtonLink href="/admin/settings" variant="secondary">
             Business rules
           </ButtonLink>
@@ -154,7 +160,8 @@ export default async function AdminDashboard() {
             Sitter payouts
           </ButtonLink>
           <ButtonLink href="/admin/screening" variant="secondary">
-            Background checks{pendingScreenings > 0 && ` (${pendingScreenings})`}
+            Background checks
+            {pendingScreenings > 0 && ` (${pendingScreenings})`}
           </ButtonLink>
           <ButtonLink href="/admin/errors" variant="secondary">
             Failures &amp; reports
@@ -196,7 +203,9 @@ export default async function AdminDashboard() {
                       <Badge color={sp.isListed ? "green" : "amber"}>
                         {sp.isListed ? "Listed" : "Unlisted"}
                       </Badge>
-                      {sp.user.suspended && <Badge color="red">Suspended</Badge>}
+                      {sp.user.suspended && (
+                        <Badge color="red">Suspended</Badge>
+                      )}
                       {!vscOnFile.has(sp.user.id) && (
                         <Link href="/admin/screening">
                           <Badge color="red">No current VSC</Badge>
@@ -251,9 +260,8 @@ export default async function AdminDashboard() {
                   <div>
                     <p className="text-sm">{r.reason}</p>
                     <p className="mt-1 text-xs text-slate-500">
-                      by {r.reporter.name} · booking{" "}
-                      {r.booking.parent.name} / {r.booking.sitter.name} ·{" "}
-                      {dt(r.createdAt)}
+                      by {r.reporter.name} · booking {r.booking.parent.name} /{" "}
+                      {r.booking.sitter.name} · {dt(r.createdAt)}
                     </p>
                     <Link
                       href={`/bookings/${r.booking.id}`}
@@ -262,7 +270,9 @@ export default async function AdminDashboard() {
                       View booking
                     </Link>
                   </div>
-                  <Badge color={REPORT_STATUS_COLOR[r.status]}>{r.status}</Badge>
+                  <Badge color={REPORT_STATUS_COLOR[r.status]}>
+                    {r.status}
+                  </Badge>
                 </div>
                 {r.status !== "RESOLVED" && r.status !== "DISMISSED" && (
                   <div className="mt-2">
