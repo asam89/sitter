@@ -326,11 +326,9 @@ export default async function AdminSitterProfilePage({
                 </div>
               ) : (
                 <p className="mt-1 text-sm text-slate-600">
-                  {!sp.isListed
-                    ? "Not available: list this sitter first."
-                    : u.suspended
-                      ? "Not available while the account is suspended."
-                      : "Not available yet: the sitter needs to tick “Let Ri'aya share my photo and bio with families” on her dashboard."}
+                  {u.suspended
+                    ? "Not available while the account is suspended."
+                    : "Not available: list this sitter first."}
                 </p>
               )}
             </div>

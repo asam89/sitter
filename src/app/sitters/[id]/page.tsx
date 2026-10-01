@@ -30,7 +30,6 @@ const loadSitter = cache(async (id: string) => {
       city: true,
       photoPath: true,
       isListed: true,
-      publicOptIn: true,
       listedPayRate: true,
       baseRate: true,
       vettedAt: true,
