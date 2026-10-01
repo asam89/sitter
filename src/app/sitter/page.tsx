@@ -16,6 +16,7 @@ import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
 import { PublicProfileCard } from "./PublicProfileCard";
 import { dt, money, moneyHr } from "@/lib/format";
 import { unreadTeamMessageCount } from "@/lib/team-messages";
+import { openShiftCoverCount } from "@/lib/shift-covers";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,7 @@ export default async function SitterDashboard() {
   });
   const hasCurrentVsc = (await sittersWithCurrentVsc([user.id])).has(user.id);
   const unreadMessages = await unreadTeamMessageCount(user.id);
+  const coverCount = profile ? await openShiftCoverCount(user.id) : 0;
   const pending = bookings.filter((b) => b.status === "REQUESTED");
   const upcoming = bookings.filter((b) =>
     ["APPROVED", "IN_PROGRESS"].includes(b.status),
@@ -72,6 +74,22 @@ export default async function SitterDashboard() {
           </ButtonLink>
         </div>
       </Card>
+
+      {coverCount > 0 && (
+        <Card className="border-brand-coral/40">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold">Shifts needing cover</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {coverCount} booked shift{coverCount === 1 ? "" : "s"} need
+                {coverCount === 1 ? "s" : ""} a sitter. First to take one gets
+                it.
+              </p>
+            </div>
+            <ButtonLink href="/sitter/shifts">View shifts</ButtonLink>
+          </div>
+        </Card>
+      )}
 
       {/* Vetting / listing status */}
       {/* A sitter created by an Admin is already vetted and has a profile but

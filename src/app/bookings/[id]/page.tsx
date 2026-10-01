@@ -12,6 +12,8 @@ import {
   startBooking,
   startCardPayment,
 } from "@/lib/actions";
+import { offerShiftCover, withdrawShiftCover } from "@/lib/shift-cover-actions";
+import { COVERABLE_STATUSES, coverPoolSitters } from "@/lib/shift-covers";
 import { cardPaymentsEnabled, stripePublishableKey } from "@/lib/stripe";
 import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
@@ -20,6 +22,7 @@ import { readBookingMedical } from "@/lib/child-medical";
 import { hasServiceAddress, serviceAddress } from "@/lib/verification";
 import { InterviewCard } from "./InterviewCard";
 import { PaymentChoice } from "./PaymentChoice";
+import { ShiftCoverForm } from "./ShiftCoverForm";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, Card, PageTitle, buttonClass } from "@/components/ui";
 import { BOOKING_STATUS_COLOR } from "@/lib/status";
@@ -70,6 +73,14 @@ export default async function BookingPage({
       sitter: { select: { id: true, name: true } },
       availabilitySlot: true,
       reviews: true,
+      shiftCovers: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: {
+          fromSitter: { select: { name: true } },
+          filledBy: { select: { name: true } },
+        },
+      },
     },
   });
   if (!booking) notFound();
@@ -83,6 +94,18 @@ export default async function BookingPage({
   const isSitter = booking.sitterId === user.id;
   const isAdmin = user.role === "ADMIN";
   if (!isParent && !isSitter && !isAdmin) redirect("/");
+
+  const latestCover = booking.shiftCovers[0] ?? null;
+  const coverOpen = latestCover?.status === "OPEN";
+  const canOfferCover =
+    isAdmin &&
+    !coverOpen &&
+    (COVERABLE_STATUSES as readonly string[]).includes(booking.status) &&
+    booking.dateTime > new Date();
+  const coverPool =
+    isAdmin && (canOfferCover || coverOpen)
+      ? await coverPoolSitters(booking.sitterId)
+      : [];
 
   const messagingOpen = !["CANCELLED", "DECLINED"].includes(booking.status);
 
@@ -164,6 +187,55 @@ export default async function BookingPage({
           )}
         </dl>
       </Card>
+
+      {isAdmin && (canOfferCover || latestCover) && (
+        <Card>
+          <h2 className="font-semibold">Shift cover</h2>
+          {coverOpen && latestCover && (
+            <div className="mt-2 space-y-2">
+              <p className="text-sm text-slate-600">
+                Offered to the sitter pool {dt(latestCover.createdAt)} (
+                {latestCover.smsSentCount} texted, {latestCover.emailSentCount}{" "}
+                emailed). Waiting for one of {coverPool.length} vetted sitter
+                {coverPool.length === 1 ? "" : "s"} to take it.
+              </p>
+              <ActionButton
+                action={withdrawShiftCover.bind(null, latestCover.id)}
+                variant="secondary"
+                confirm="Take this shift out of the pool? Sitters will no longer be able to take it."
+              >
+                Withdraw offer
+              </ActionButton>
+            </div>
+          )}
+          {latestCover?.status === "FILLED" && (
+            <p className="mt-2 text-sm text-emerald-700">
+              Covered by {latestCover.filledBy?.name} on{" "}
+              {latestCover.filledAt ? dt(latestCover.filledAt) : ""}, replacing{" "}
+              {latestCover.fromSitter.name}.
+            </p>
+          )}
+          {latestCover?.status === "WITHDRAWN" && (
+            <p className="mt-2 text-sm text-slate-500">
+              Last offer withdrawn{" "}
+              {latestCover.withdrawnAt ? dt(latestCover.withdrawnAt) : ""}.
+            </p>
+          )}
+          {canOfferCover && (
+            <div className="mt-3">
+              <ShiftCoverForm
+                action={offerShiftCover}
+                bookingId={booking.id}
+                sitterName={booking.sitter.name}
+                poolSize={coverPool.length}
+                textable={
+                  coverPool.filter((s) => s.phone && !s.smsOptOutAt).length
+                }
+              />
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Service address — the assigned sitter sees it from the request on. */}
       {showServiceAddress && fullAddress && (
@@ -374,9 +446,7 @@ export default async function BookingPage({
               action={payBooking}
               startCard={startCardPayment}
               finalizeCard={finalizeCardPayment}
-              publishableKey={
-                cardPaymentsEnabled ? stripePublishableKey : null
-              }
+              publishableKey={cardPaymentsEnabled ? stripePublishableKey : null}
               bookingId={booking.id}
               amount={money(booking.totalAmount)}
               etransferEmail={settings.etransferEmail}
