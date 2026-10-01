@@ -222,7 +222,20 @@ export async function notifyShiftCovered(c: {
   );
 }
 
-class CoverError extends Error {}
+export const COVER_ERRORS = {
+  unvetted: "Only vetted sitters can take shifts.",
+  taken: "Another sitter already took this shift.",
+  own: "This is your own shift.",
+  gone: "This shift can no longer be covered.",
+  clash: "You already have a booking during this shift.",
+} as const;
+export type CoverErrorCode = keyof typeof COVER_ERRORS;
+
+export class CoverError extends Error {
+  constructor(readonly code: CoverErrorCode) {
+    super(COVER_ERRORS[code]);
+  }
+}
 
 // The first sitter to call this wins the shift and becomes the booking's
 // sitter. Returns the booking id.
@@ -235,7 +248,7 @@ export async function fillShiftCover(
     include: { user: { select: { suspended: true } } },
   });
   if (!profile || profile.user.suspended) {
-    throw new Error("Only vetted sitters can take shifts.");
+    throw new CoverError("unvetted");
   }
 
   const cover = await prisma.shiftCover.findUniqueOrThrow({
@@ -244,109 +257,104 @@ export async function fillShiftCover(
   });
   const booking = cover.booking;
   if (cover.status !== "OPEN") {
-    throw new Error("Another sitter already took this shift.");
+    throw new CoverError("taken");
   }
   if (cover.fromSitterId === userId || booking.sitterId === userId) {
-    throw new Error("This is your own shift.");
+    throw new CoverError("own");
   }
   if (!isCoverable(booking.status) || booking.dateTime <= new Date()) {
-    throw new Error("This shift can no longer be covered.");
+    throw new CoverError("gone");
   }
 
   const start = booking.dateTime;
   const end = new Date(start.getTime() + booking.durationHours * 3600 * 1000);
   const now = new Date();
 
-  try {
-    await prisma.$transaction(async (tx) => {
-      // First claim wins: the status flip is the lock.
-      const taken = await tx.shiftCover.updateMany({
-        where: { id: coverId, status: "OPEN" },
-        data: { status: "FILLED", filledById: userId, filledAt: now },
-      });
-      if (taken.count === 0) {
-        throw new CoverError("Another sitter just took this shift.");
-      }
+  await prisma.$transaction(async (tx) => {
+    // First claim wins: the status flip is the lock.
+    const taken = await tx.shiftCover.updateMany({
+      where: { id: coverId, status: "OPEN" },
+      data: { status: "FILLED", filledById: userId, filledAt: now },
+    });
+    if (taken.count === 0) {
+      throw new CoverError("taken");
+    }
 
-      const overlapping = await tx.availabilitySlot.findMany({
-        where: {
-          sitterProfileId: profile.id,
-          startTime: { lt: end },
-          endTime: { gt: start },
-        },
+    const overlapping = await tx.availabilitySlot.findMany({
+      where: {
+        sitterProfileId: profile.id,
+        startTime: { lt: end },
+        endTime: { gt: start },
+      },
+    });
+    if (overlapping.some((s) => s.status !== "OPEN")) {
+      throw new CoverError("clash");
+    }
+    // Their own open hours during the shift are spent on it now.
+    for (const slot of overlapping) {
+      const [first, ...rest] = remainders(slot, {
+        start,
+        end,
+        hours: booking.durationHours,
       });
-      if (overlapping.some((s) => s.status !== "OPEN")) {
-        throw new CoverError("You already have a booking during this shift.");
-      }
-      // Their own open hours during the shift are spent on it now.
-      for (const slot of overlapping) {
-        const [first, ...rest] = remainders(slot, {
-          start,
-          end,
-          hours: booking.durationHours,
+      if (first) {
+        await tx.availabilitySlot.update({
+          where: { id: slot.id },
+          data: first,
         });
-        if (first) {
+      } else {
+        // An open block entirely inside the shift. A block reopened by a
+        // cancellation still carries that booking, so it can't be deleted;
+        // collapse it to zero length instead.
+        const referenced = await tx.booking.count({
+          where: { availabilitySlotId: slot.id },
+        });
+        if (referenced > 0) {
           await tx.availabilitySlot.update({
             where: { id: slot.id },
-            data: first,
+            data: { endTime: slot.startTime },
           });
         } else {
-          // An open block entirely inside the shift. A block reopened by a
-          // cancellation still carries that booking, so it can't be deleted;
-          // collapse it to zero length instead.
-          const referenced = await tx.booking.count({
-            where: { availabilitySlotId: slot.id },
-          });
-          if (referenced > 0) {
-            await tx.availabilitySlot.update({
-              where: { id: slot.id },
-              data: { endTime: slot.startTime },
-            });
-          } else {
-            await tx.availabilitySlot.delete({ where: { id: slot.id } });
-          }
-        }
-        if (rest.length > 0) {
-          await tx.availabilitySlot.createMany({
-            data: rest.map((r) => ({
-              sitterProfileId: profile.id,
-              startTime: r.startTime,
-              endTime: r.endTime,
-              status: "OPEN" as const,
-            })),
-          });
+          await tx.availabilitySlot.delete({ where: { id: slot.id } });
         }
       }
+      if (rest.length > 0) {
+        await tx.availabilitySlot.createMany({
+          data: rest.map((r) => ({
+            sitterProfileId: profile.id,
+            startTime: r.startTime,
+            endTime: r.endTime,
+            status: "OPEN" as const,
+          })),
+        });
+      }
+    }
 
-      await tx.availabilitySlot.update({
-        where: { id: booking.availabilitySlotId },
-        data: { sitterProfileId: profile.id },
-      });
-      // Taking a shift is accepting it, so a still-pending request is approved.
-      const moved = await tx.booking.updateMany({
-        where: {
-          id: booking.id,
-          sitterId: cover.fromSitterId,
-          status: { in: [...COVERABLE_STATUSES] },
-        },
-        data:
-          booking.status === "REQUESTED"
-            ? {
-                sitterId: userId,
-                status: "APPROVED",
-                approvedAt: now,
-                addressReleasedAt: now,
-              }
-            : { sitterId: userId },
-      });
-      if (moved.count === 0) {
-        throw new CoverError("This shift can no longer be covered.");
-      }
+    await tx.availabilitySlot.update({
+      where: { id: booking.availabilitySlotId },
+      data: { sitterProfileId: profile.id },
     });
-  } catch (e) {
-    if (e instanceof CoverError) throw new Error(e.message);
-    throw e;
-  }
+    // Taking a shift is accepting it, so a still-pending request is approved.
+    const moved = await tx.booking.updateMany({
+      where: {
+        id: booking.id,
+        sitterId: cover.fromSitterId,
+        status: { in: [...COVERABLE_STATUSES] },
+      },
+      data:
+        booking.status === "REQUESTED"
+          ? {
+              sitterId: userId,
+              status: "APPROVED",
+              approvedAt: now,
+              addressReleasedAt: now,
+            }
+          : { sitterId: userId },
+    });
+    if (moved.count === 0) {
+      throw new CoverError("gone");
+    }
+  });
 
   const [parent, newSitter, oldSitter] = await Promise.all([
     prisma.user.findUniqueOrThrow({

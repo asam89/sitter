@@ -218,7 +218,7 @@ export default async function BookingPage({
           {latestCover?.status === "WITHDRAWN" && (
             <p className="mt-2 text-sm text-slate-500">
               Last offer withdrawn{" "}
-              {latestCover.withdrawnAt ? dt(latestCover.withdrawnAt) : ""}.
+              {latestCover.withdrawnAt ? dt(latestCover.withdrawnAt) : ""}
             </p>
           )}
           {canOfferCover && (

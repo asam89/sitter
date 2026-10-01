@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { takeShiftCover } from "@/lib/shift-cover-actions";
-import { openShiftCoversFor } from "@/lib/shift-covers";
+import { COVER_ERRORS, openShiftCoversFor } from "@/lib/shift-covers";
 import { sitterPayout } from "@/lib/pricing";
 import { ActionButton } from "@/components/ActionButton";
 import {
@@ -15,7 +15,15 @@ import { dt, money } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default async function SitterShiftsPage() {
+export default async function SitterShiftsPage({
+  searchParams,
+}: {
+  searchParams: { error?: string };
+}) {
+  const error =
+    searchParams.error && searchParams.error in COVER_ERRORS
+      ? COVER_ERRORS[searchParams.error as keyof typeof COVER_ERRORS]
+      : null;
   const user = await requireRole("SITTER");
   const profile = await prisma.sitterProfile.findUnique({
     where: { userId: user.id },
@@ -57,6 +65,15 @@ export default async function SitterShiftsPage() {
         title="Shifts needing cover"
         subtitle="The booked sitter can't make these. First to take one gets the booking."
       />
+
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
+          {error}
+        </p>
+      )}
 
       {covers.length === 0 ? (
         <EmptyState>
