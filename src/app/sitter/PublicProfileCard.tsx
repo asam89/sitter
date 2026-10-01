@@ -163,7 +163,7 @@ export function PublicProfileCard({
             defaultChecked={publicOptIn}
             className="h-4 w-4 rounded border-slate-300"
           />
-          Show my photo &amp; bio on the public Meet our team page
+          Let Ri&apos;aya share my photo &amp; bio with families (a profile link we send parents, and the Meet our team page)
         </label>
         {err && <p className="text-sm text-red-600">{err}</p>}
         {msg && <p className="text-sm text-emerald-700">{msg}</p>}
