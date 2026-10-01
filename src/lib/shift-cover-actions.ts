@@ -8,6 +8,7 @@ import { requireRole } from "@/lib/session";
 import {
   SITTER_SHIFTS_PATH,
   coverPoolSitters,
+  CoverError,
   fillShiftCover,
   isCoverable,
   notifyPoolOfShift,
@@ -118,7 +119,14 @@ export async function withdrawShiftCover(coverId: string): Promise<void> {
 
 export async function takeShiftCover(coverId: string): Promise<void> {
   const user = await requireRole("SITTER");
-  const bookingId = await fillShiftCover(coverId, user.id);
+  let bookingId: string;
+  try {
+    bookingId = await fillShiftCover(coverId, user.id);
+  } catch (e) {
+    if (!(e instanceof CoverError)) throw e;
+    revalidatePath(SITTER_SHIFTS_PATH);
+    redirect(`${SITTER_SHIFTS_PATH}?error=${e.code}`);
+  }
   revalidatePath(SITTER_SHIFTS_PATH);
   revalidatePath("/sitter");
   revalidatePath(`/bookings/${bookingId}`);
