@@ -7,6 +7,7 @@ import { requireRole } from "@/lib/session";
 import { getEmailProvider, getSmsProvider } from "@/lib/notifications";
 import { smsBodyWithOptOut } from "@/lib/sms-campaign";
 import { SITTERS, SITTER_INBOX_PATH } from "@/lib/team-messages";
+import { sweepWeeklySchedules } from "@/lib/pipeline-nudges";
 
 // Team → sitter messages. The text lives in the portal; the optional SMS and
 // email are only a pointer to it, so nothing sensitive goes over a carrier and
@@ -125,4 +126,21 @@ export async function sendTeamMessage(
   revalidatePath("/admin/messages");
   revalidatePath(SITTER_INBOX_PATH);
   return { sent: recipients.length, texted, emailed };
+}
+
+export type ScheduleReminderState = {
+  error?: string;
+  reminded?: number;
+  texted?: number;
+};
+
+// The weekly schedule reminder, sent now to every vetted sitter regardless of
+// when they last got it.
+export async function sendScheduleReminderNow(): Promise<ScheduleReminderState> {
+  await requireRole("ADMIN");
+  const r = await sweepWeeklySchedules(new Date(), { force: true });
+  if (r.vettedSitters === 0)
+    return { error: "There are no vetted sitters yet." };
+  revalidatePath("/admin/messages");
+  return { reminded: r.reminded, texted: r.texted };
 }

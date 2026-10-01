@@ -15,7 +15,8 @@
 // Delivery never throws: a failed email must not stop the sweep.
 
 import { prisma } from "@/lib/prisma";
-import { getEmailProvider } from "@/lib/notifications";
+import { getEmailProvider, getSmsProvider } from "@/lib/notifications";
+import { smsBodyWithOptOut } from "@/lib/sms-campaign";
 import { adminAlertRecipients } from "@/lib/admin-notifications";
 import { bookingRef, d, dt } from "@/lib/format";
 import type { PipelineNudgeKind } from "@prisma/client";
@@ -316,30 +317,41 @@ export async function sweepPipeline(now = new Date()): Promise<PipelineSweep> {
   };
 }
 
-// Weekly sweep: every listed sitter is asked to review the coming week's
-// hours, with a count of what they have open. Throttled to once per
-// WEEKLY_COOLDOWN_DAYS so a retried cron run doesn't double-send, and skips
-// anyone who got the empty-calendar nudge in the last day.
+// Weekly sweep: every vetted sitter (listed or not) is asked to set the coming
+// week's hours, by email and by text, with a count of what they have open.
+// Throttled to once per WEEKLY_COOLDOWN_DAYS so a retried cron run doesn't
+// double-send, and skips anyone who got the empty-calendar nudge in the last
+// day. `force` (the Admin's "send now" button) ignores both throttles.
 export const WEEKLY_HORIZON_DAYS = 7;
 const WEEKLY_COOLDOWN_DAYS = 6;
 
 export type WeeklyScheduleSweep = {
-  listedSitters: number;
+  vettedSitters: number;
   reminded: number;
+  texted: number;
   skipped: number;
 };
 
 export async function sweepWeeklySchedules(
   now = new Date(),
+  { force = false }: { force?: boolean } = {},
 ): Promise<WeeklyScheduleSweep> {
   const horizon = new Date(now.getTime() + WEEKLY_HORIZON_DAYS * DAY_MS);
   const weeklySince = new Date(now.getTime() - WEEKLY_COOLDOWN_DAYS * DAY_MS);
   const emptySince = new Date(now.getTime() - DAY_MS);
 
-  const listed = await prisma.sitterProfile.findMany({
-    where: { isListed: true, user: { suspended: false } },
+  const vetted = await prisma.sitterProfile.findMany({
+    where: { user: { suspended: false, role: "SITTER" } },
     select: {
-      user: { select: { id: true, email: true, name: true } },
+      user: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          smsOptOutAt: true,
+        },
+      },
       slots: {
         where: {
           status: "OPEN",
@@ -351,22 +363,32 @@ export async function sweepWeeklySchedules(
     },
   });
 
+  const link = appUrl("/sitter/availability");
+  const sms = getSmsProvider();
+  const text = smsBodyWithOptOut(
+    `Salaam from Ri'aya! Please set your schedule for this week so we can ` +
+      `start matching you with families: ${link}`,
+  );
+
   let reminded = 0;
+  let texted = 0;
   let skipped = 0;
-  for (const s of listed) {
-    const recent = await prisma.pipelineNudge.findFirst({
-      where: {
-        userId: s.user.id,
-        OR: [
-          { kind: "SITTER_WEEKLY_SCHEDULE", sentAt: { gte: weeklySince } },
-          { kind: "SITTER_SCHEDULE", sentAt: { gte: emptySince } },
-        ],
-      },
-      select: { id: true },
-    });
-    if (recent) {
-      skipped++;
-      continue;
+  for (const s of vetted) {
+    if (!force) {
+      const recent = await prisma.pipelineNudge.findFirst({
+        where: {
+          userId: s.user.id,
+          OR: [
+            { kind: "SITTER_WEEKLY_SCHEDULE", sentAt: { gte: weeklySince } },
+            { kind: "SITTER_SCHEDULE", sentAt: { gte: emptySince } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (recent) {
+        skipped++;
+        continue;
+      }
     }
 
     const openMs = s.slots.reduce((sum, slot) => {
@@ -377,22 +399,34 @@ export async function sweepWeeklySchedules(
     const openHours = Math.round(openMs / 3_600_000);
     const status =
       openHours === 0
-        ? `You have no open hours for the next 7 days, so parents can't book you right now.`
-        : `You have ${openHours} open hour${openHours === 1 ? "" : "s"} over the next 7 days.`;
+        ? `You have no open hours in the next 7 days, so families can't book you yet.`
+        : `You have ${openHours} open hour${openHours === 1 ? "" : "s"} in the next 7 days.`;
 
-    const ok = await send(
+    const emailed = await send(
       s.user.email,
-      "Please check your Ri'aya schedule for the week",
-      `Hi ${firstName(s.user.name)},\n\n` +
-        `${status}\n\n` +
-        `Please take a minute to check your schedule for the coming week. Remove any times ` +
-        `you can't make and add any you can:\n\n` +
-        `${appUrl("/sitter/availability")}\n\n` +
-        `Parents book straight from your open hours, so keeping them accurate means more ` +
-        `bookings and no surprises for the family.`,
-      `\n\nQuestions? Just reply to this email.\n\nThe Ri'aya team\nwww.riaya.ca`,
+      "Please set your schedule for this week",
+      `Salaam ${firstName(s.user.name)},\n\n` +
+        `Please take a few minutes to set your schedule for the coming week. ` +
+        `Once your hours are in, we can start matching you with families and ` +
+        `sending you bookings.\n\n` +
+        `${status} Update them here:\n${link}`,
+      `\n\nThank you,\nThe Ri'aya team\nwww.riaya.ca`,
     );
-    if (ok) {
+
+    let smsSent = false;
+    if (s.user.phone && !s.user.smsOptOutAt) {
+      try {
+        await sms.sendMessage(s.user.phone, { subject: "Ri'aya", body: text });
+        smsSent = true;
+        texted++;
+      } catch (e) {
+        console.error(
+          `[pipeline-nudge] sms to ${s.user.id} failed: ${String(e).slice(0, 200)}`,
+        );
+      }
+    }
+
+    if (emailed || smsSent) {
       await prisma.pipelineNudge.create({
         data: { userId: s.user.id, kind: "SITTER_WEEKLY_SCHEDULE" },
       });
@@ -400,5 +434,5 @@ export async function sweepWeeklySchedules(
     }
   }
 
-  return { listedSitters: listed.length, reminded, skipped };
+  return { vettedSitters: vetted.length, reminded, texted, skipped };
 }

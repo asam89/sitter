@@ -1,16 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { sendTeamMessage } from "@/lib/team-message-actions";
+import {
+  sendScheduleReminderNow,
+  sendTeamMessage,
+} from "@/lib/team-message-actions";
 import { messageableSitters } from "@/lib/team-messages";
 import { Card, EmptyState, PageTitle } from "@/components/ui";
 import { dt } from "@/lib/format";
 import { TeamMessageForm } from "./TeamMessageForm";
+import { ScheduleReminderButton } from "./ScheduleReminderButton";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminMessagesPage() {
   await requireRole("ADMIN");
-  const [sitters, messages] = await Promise.all([
+  const [sitters, messages, vetted] = await Promise.all([
     messageableSitters(),
     prisma.teamMessage.findMany({
       orderBy: { createdAt: "desc" },
@@ -32,6 +36,14 @@ export default async function AdminMessagesPage() {
         },
       },
     }),
+    prisma.user.findMany({
+      where: {
+        role: "SITTER",
+        suspended: false,
+        sitterProfile: { isNot: null },
+      },
+      select: { phone: true, smsOptOutAt: true },
+    }),
   ]);
   const sitterCount = sitters.length;
 
@@ -50,6 +62,12 @@ export default async function AdminMessagesPage() {
           email: s.email,
           textable: Boolean(s.phone) && !s.smsOptOutAt,
         }))}
+      />
+
+      <ScheduleReminderButton
+        action={sendScheduleReminderNow}
+        vettedCount={vetted.length}
+        textableCount={vetted.filter((u) => u.phone && !u.smsOptOutAt).length}
       />
 
       <div className="space-y-2">
