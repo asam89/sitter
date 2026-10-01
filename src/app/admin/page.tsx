@@ -9,7 +9,7 @@ import {
   EmptyState,
   PageTitle,
 } from "@/components/ui";
-import { BOOKING_STATUS_COLOR, REPORT_STATUS_COLOR } from "@/lib/status";
+import { REPORT_STATUS_COLOR, bookingStage } from "@/lib/status";
 import { sittersWithCurrentVsc } from "@/lib/screening";
 import { bookingRef, dt, money, moneyHr } from "@/lib/format";
 import {
@@ -323,8 +323,8 @@ export default async function AdminDashboard() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge color={BOOKING_STATUS_COLOR[b.status]}>
-                      {b.status}
+                    <Badge color={bookingStage(b).color}>
+                      {bookingStage(b).label}
                     </Badge>
                     <Link
                       href={`/bookings/${b.id}`}

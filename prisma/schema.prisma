@@ -580,6 +580,8 @@ model Booking {
   // Pre-session reminders, stamped so a cron re-run can't send twice.
   reminderSentAt           DateTime?
   finalReminderSentAt      DateTime?
+  // When the parent was asked for feedback after the session.
+  feedbackRequestedAt      DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

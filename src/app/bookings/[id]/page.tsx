@@ -29,7 +29,7 @@ import { PaymentChoice } from "./PaymentChoice";
 import { ShiftCoverForm } from "./ShiftCoverForm";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, Card, PageTitle, buttonClass } from "@/components/ui";
-import { BOOKING_STATUS_COLOR } from "@/lib/status";
+import { bookingStage } from "@/lib/status";
 import { bookingRef, dt, money } from "@/lib/format";
 import { Chat } from "./Chat";
 import { ReportForm } from "./ReportForm";
@@ -141,12 +141,9 @@ export default async function BookingPage({
           subtitle={dt(booking.dateTime)}
         />
         <div className="flex items-center gap-2">
-          <Badge color={BOOKING_STATUS_COLOR[booking.status]}>
-            {booking.status}
+          <Badge color={bookingStage(booking).color}>
+            {bookingStage(booking).label}
           </Badge>
-          {booking.paidAt && booking.status !== "CANCELLED" && (
-            <Badge color="green">PAID</Badge>
-          )}
         </div>
       </div>
 
@@ -530,13 +527,25 @@ export default async function BookingPage({
         )}
 
         {/* Completion — confirmer is configurable */}
-        {booking.status === "IN_PROGRESS" &&
+        {((booking.status === "IN_PROGRESS" &&
           (isAdmin ||
-            (settings.completionConfirmedBy === "PARENT" && isParent)) && (
-            <ActionButton action={completeBooking.bind(null, booking.id)}>
-              Confirm completed &amp; release payout
+            (settings.completionConfirmedBy === "PARENT" && isParent))) ||
+          (isAdmin && booking.status === "APPROVED" && booking.paidAt)) && (
+          <div className="space-y-1">
+            <ActionButton
+              action={completeBooking.bind(null, booking.id)}
+              confirm="Mark this booking completed? The sitter's pay becomes owed and the parent is asked for feedback."
+            >
+              Mark completed
             </ActionButton>
-          )}
+            {isAdmin && (
+              <p className="text-xs text-slate-500">
+                Paid bookings are marked completed automatically within an hour
+                after the session ends.
+              </p>
+            )}
+          </div>
+        )}
         {booking.status === "IN_PROGRESS" &&
           settings.completionConfirmedBy === "ADMIN" &&
           !isAdmin && (
@@ -605,7 +614,7 @@ export default async function BookingPage({
         )}
         {booking.status === "COMPLETED" && (
           <p className="text-sm text-emerald-700">
-            Completed — payout released to the sitter.
+            Completed — the sitter&apos;s pay is now owed.
           </p>
         )}
       </Card>

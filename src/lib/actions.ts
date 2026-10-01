@@ -11,12 +11,7 @@ import {
 } from "@/lib/slot-window";
 import { requireUser, requireRole } from "@/lib/session";
 import { getBusinessSettings, updateBusinessSettings } from "@/lib/settings";
-import {
-  computePrice,
-  effectiveRate,
-  isLastMinute,
-  sitterPayout,
-} from "@/lib/pricing";
+import { computePrice, effectiveRate, isLastMinute } from "@/lib/pricing";
 import { computeRefund } from "@/lib/cancellation";
 import {
   copyRequestMedicalToBooking,
@@ -37,8 +32,8 @@ import {
   transferToSitter,
 } from "@/lib/payouts";
 import {
-  notifyBookingEvent,
-  type BookingEvent,
+  bookingNotifyInclude as notifyInclude,
+  notifyBookingParties as notify,
 } from "@/lib/booking-notifications";
 import {
   notifySitterVetted,
@@ -51,7 +46,8 @@ import {
 } from "@/lib/admin-notifications";
 import { notifyListedSittersOfRequest } from "@/lib/request-notifications";
 import { markCardPaid } from "@/lib/payments";
-import { Prisma, type Booking, type BusinessSettings } from "@prisma/client";
+import { finishBooking } from "@/lib/booking-completion";
+import { Prisma, type Booking } from "@prisma/client";
 import {
   adminBookingSchema,
   applicationSchema,
@@ -84,63 +80,6 @@ function waiverAcceptanceContext(): {
     ip: forwarded?.split(",")[0]?.trim() || h.get("x-real-ip") || null,
     userAgent: h.get("user-agent"),
   };
-}
-
-// A booking loaded with the fields needed to notify both parties.
-type BookingForNotify = {
-  id: string;
-  dateTime: Date;
-  durationHours: number;
-  baseAmount: number;
-  rushFeeAmount: number;
-  platformFeeAmount: number;
-  totalAmount: number;
-  parentId: string;
-  sitterId: string;
-  parent: { name: string; email: string; phone: string | null };
-  sitter: { name: string; email: string; phone: string | null };
-  availabilitySlot: { sitterProfile: { city: string | null } };
-};
-
-const notifyInclude = {
-  parent: { select: { name: true, email: true, phone: true } },
-  sitter: { select: { name: true, email: true, phone: true } },
-  availabilitySlot: { select: { sitterProfile: { select: { city: true } } } },
-} as const;
-
-// Fan a lifecycle event out to the sitter and/or parent across enabled channels.
-async function notify(
-  event: BookingEvent,
-  audiences: Array<"SITTER" | "PARENT">,
-  booking: BookingForNotify,
-  settings: BusinessSettings,
-) {
-  const base = {
-    bookingId: booking.id,
-    settings,
-    parentName: booking.parent.name,
-    sitterName: booking.sitter.name,
-    when: booking.dateTime,
-    durationHours: booking.durationHours,
-    city: booking.availabilitySlot.sitterProfile.city,
-    sitterEarns: sitterPayout(booking),
-    total: booking.totalAmount,
-  };
-  for (const audience of audiences) {
-    const recipient =
-      audience === "SITTER"
-        ? {
-            userId: booking.sitterId,
-            email: booking.sitter.email,
-            phone: booking.sitter.phone,
-          }
-        : {
-            userId: booking.parentId,
-            email: booking.parent.email,
-            phone: booking.parent.phone,
-          };
-    await notifyBookingEvent(event, { ...base, audience, recipient });
-  }
 }
 
 // ---------- Sitter: application ----------
@@ -176,7 +115,9 @@ export async function submitApplication(
     const field = String(issue?.path[0] ?? "");
     const label =
       APPLICATION_FIELD_LABELS[field] ?? (field ? field : "One of the answers");
-    return { error: `${label}: ${issue?.message ?? "please check this field."}` };
+    return {
+      error: `${label}: ${issue?.message ?? "please check this field."}`,
+    };
   }
   const d = parsed.data;
 
@@ -640,7 +581,9 @@ export async function createBooking(
 
   const settings = await getBusinessSettings();
   const terms = await getActiveTerms();
-  if (slotDurationHours(slot.startTime, slot.endTime) < settings.minBookingHours) {
+  if (
+    slotDurationHours(slot.startTime, slot.endTime) < settings.minBookingHours
+  ) {
     return {
       error: `Bookings are a minimum of ${settings.minBookingHours} hours — this block is shorter than that.`,
     };
@@ -657,7 +600,10 @@ export async function createBooking(
     };
   }
   const duration = window.hours;
-  const lastMinute = isLastMinute(window.start, settings.lastMinuteThresholdHours);
+  const lastMinute = isLastMinute(
+    window.start,
+    settings.lastMinuteThresholdHours,
+  );
   const price = computePrice(
     effectiveRate(slot.sitterProfile),
     duration,
@@ -1248,7 +1194,8 @@ async function preparePayment(
       error: "The sitter has to approve the booking before payment.",
     };
   }
-  if (booking.paidAt) return { ok: false, error: "This booking is already paid." };
+  if (booking.paidAt)
+    return { ok: false, error: "This booking is already paid." };
 
   // An Admin-entered booking never went through the booking form, so this is
   // the parent's first chance to give the address the sitter needs.
@@ -1415,14 +1362,14 @@ export async function startBooking(bookingId: string) {
   revalidatePath("/admin");
 }
 
-// Confirm completion (releases payout). The confirmer is configurable: with
-// completionConfirmedBy = PARENT the parent or an Admin can confirm; with ADMIN
-// only an Admin can. Reviews unlock once COMPLETED.
+// Mark a paid booking completed (the sitter's payout becomes owed). An Admin
+// can complete an approved or in-progress booking; with completionConfirmedBy
+// = PARENT the parent can confirm one that is in progress. Paid bookings also
+// complete on their own once the session ends (see booking-completion).
 export async function completeBooking(bookingId: string) {
   const user = await requireUser();
   const booking = await prisma.booking.findUniqueOrThrow({
     where: { id: bookingId },
-    include: { ...notifyInclude, sitter: { include: { sitterProfile: true } } },
   });
   const settings = await getBusinessSettings();
 
@@ -1432,32 +1379,16 @@ export async function completeBooking(bookingId: string) {
   if (!isAdmin && !parentMayConfirm) {
     throw new Error("Not permitted to confirm completion.");
   }
-  if (booking.status !== "IN_PROGRESS") {
-    throw new Error("Booking must be in progress before completion.");
+  const allowed = isAdmin ? ["APPROVED", "IN_PROGRESS"] : ["IN_PROGRESS"];
+  if (!allowed.includes(booking.status)) {
+    throw new Error("Booking must be confirmed before it can be completed.");
   }
   if (!booking.paidAt)
     throw new Error("Booking must be paid before completion.");
 
-  // Completion releases the sitter's money. The transfer is attempted here but
-  // is never allowed to fail the completion — anything that doesn't move shows
-  // up as outstanding on /admin/payouts.
-  const attempt = await transferToSitter(booking, booking.sitter.sitterProfile);
-  await prisma.booking.update({
-    where: { id: bookingId },
-    data: {
-      status: "COMPLETED",
-      completedAt: new Date(),
-      payoutReleasedAt: new Date(),
-      payoutAmount: payoutAmount(booking),
-      payoutStatus: attempt.status,
-      payoutMethod: attempt.status === "PAID" ? "STRIPE" : null,
-      payoutTransferId: attempt.transferId,
-      payoutError: attempt.error,
-      payoutPaidAt: attempt.status === "PAID" ? new Date() : null,
-    },
-  });
-  await notify("COMPLETED", ["PARENT", "SITTER"], booking, settings);
+  await finishBooking(bookingId);
   revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/admin/bookings");
   revalidatePath("/admin");
 }
 
