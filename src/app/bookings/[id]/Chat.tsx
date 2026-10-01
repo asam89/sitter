@@ -63,7 +63,7 @@ export function Chat({ bookingId, meId }: { bookingId: string; meId: string }) {
             className={
               "max-w-[80%] rounded-lg px-3 py-2 text-sm " +
               (m.sender.id === meId
-                ? "ml-auto bg-indigo-600 text-white"
+                ? "ml-auto bg-brand-teal text-white"
                 : "bg-white text-slate-800 ring-1 ring-slate-200")
             }
           >

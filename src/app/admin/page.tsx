@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { effectiveRate } from "@/lib/pricing";
 import { requireRole } from "@/lib/session";
 import {
   Badge,
@@ -9,14 +10,32 @@ import {
   PageTitle,
 } from "@/components/ui";
 import { BOOKING_STATUS_COLOR, REPORT_STATUS_COLOR } from "@/lib/status";
-import { dt, money, moneyHr } from "@/lib/format";
+import { sittersWithCurrentVsc } from "@/lib/screening";
+import { bookingRef, dt, money, moneyHr } from "@/lib/format";
 import {
   ListingToggle,
   ReportControls,
+  ShowcaseToggle,
   SuspendButton,
 } from "./AdminControls";
 
 export const dynamic = "force-dynamic";
+
+// Total hours of a sitter's upcoming blocks in a given slot state.
+function upcomingHours(
+  slots: { startTime: Date; endTime: Date; status: string }[],
+  status: "OPEN" | "BOOKED",
+): number {
+  return slots
+    .filter((s) =>
+      status === "OPEN" ? s.status === "OPEN" : s.status !== "OPEN",
+    )
+    .reduce(
+      (sum, s) =>
+        sum + (s.endTime.getTime() - s.startTime.getTime()) / 3_600_000,
+      0,
+    );
+}
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
@@ -38,13 +57,20 @@ export default async function AdminDashboard() {
     reports,
     revenueAgg,
     rushBookings,
+    openRequests,
+    pendingScreenings,
   ] = await Promise.all([
     prisma.sitterApplication.count({
-      where: { status: { in: ["APPLIED", "UNDER_REVIEW"] } },
+      where: { status: { in: ["APPLIED", "UNDER_REVIEW", "INTERVIEW"] } },
     }),
     prisma.sitterProfile.findMany({
       include: {
         user: { select: { id: true, name: true, suspended: true } },
+        // Upcoming blocks only, so the hours summary reflects what's bookable.
+        slots: {
+          where: { endTime: { gte: new Date() } },
+          select: { startTime: true, endTime: true, status: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -71,13 +97,27 @@ export default async function AdminDashboard() {
       },
     }),
     prisma.booking.aggregate({
-      where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+      // Revenue is recognised once a booking is paid (escrow) — regardless of
+      // where it sits in the post-payment lifecycle.
+      where: { paidAt: { not: null }, status: { not: "CANCELLED" } },
       _sum: { totalAmount: true, platformFeeAmount: true, rushFeeAmount: true },
     }),
     prisma.booking.count({
-      where: { isLastMinute: true, status: { in: ["CONFIRMED", "COMPLETED"] } },
+      where: {
+        isLastMinute: true,
+        paidAt: { not: null },
+        status: { not: "CANCELLED" },
+      },
     }),
+    prisma.bookingRequest.count({
+      where: { status: "OPEN", startTime: { gt: new Date() } },
+    }),
+    prisma.sitterScreening.count({ where: { status: "PENDING" } }),
   ]);
+
+  // Which sitters Ri'aya can currently stand behind. A listed sitter without
+  // one is the thing an Admin most needs to see from here.
+  const vscOnFile = await sittersWithCurrentVsc(sitters.map((sp) => sp.userId));
 
   const bookedRevenue = revenueAgg._sum.totalAmount ?? 0;
   const feeRevenue = revenueAgg._sum.platformFeeAmount ?? 0;
@@ -87,13 +127,47 @@ export default async function AdminDashboard() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <PageTitle title="Admin dashboard" subtitle="Sitbaby operations." />
+        <PageTitle title="Admin dashboard" subtitle="Ri'aya operations." />
         <div className="flex gap-2">
+          <ButtonLink href="/admin/bookings" variant="secondary">
+            Bookings
+          </ButtonLink>
+          <ButtonLink href="/admin/requests" variant="secondary">
+            Requests ({openRequests})
+          </ButtonLink>
+          <ButtonLink href="/admin/roster" variant="secondary">
+            Sitter profiles
+          </ButtonLink>
           <ButtonLink href="/admin/applications" variant="secondary">
             Applications ({pendingApps})
           </ButtonLink>
+          <ButtonLink href="/admin/parents" variant="secondary">
+            Parents
+          </ButtonLink>
+          <ButtonLink href="/admin/users" variant="secondary">
+            User accounts
+          </ButtonLink>
+          <ButtonLink href="/admin/broadcast" variant="secondary">
+            Email parents
+          </ButtonLink>
+          <ButtonLink href="/admin/messages" variant="secondary">
+            Message sitters
+          </ButtonLink>
           <ButtonLink href="/admin/settings" variant="secondary">
             Business rules
+          </ButtonLink>
+          <ButtonLink href="/admin/terms" variant="secondary">
+            Waiver &amp; terms
+          </ButtonLink>
+          <ButtonLink href="/admin/payouts" variant="secondary">
+            Sitter payouts
+          </ButtonLink>
+          <ButtonLink href="/admin/screening" variant="secondary">
+            Background checks
+            {pendingScreenings > 0 && ` (${pendingScreenings})`}
+          </ButtonLink>
+          <ButtonLink href="/admin/errors" variant="secondary">
+            Failures &amp; reports
           </ButtonLink>
         </div>
       </div>
@@ -123,28 +197,49 @@ export default async function AdminDashboard() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="font-medium">
-                      {sp.user.name}{" "}
+                      <Link
+                        href={`/admin/roster/${sp.user.id}`}
+                        className="hover:text-brand-coral"
+                      >
+                        {sp.user.name}
+                      </Link>{" "}
                       <span className="text-sm text-slate-400">
-                        {moneyHr(sp.listedPayRate)}
+                        {moneyHr(effectiveRate(sp))}
                       </span>
                     </p>
                     <div className="mt-1 flex items-center gap-2">
                       <Badge color={sp.isListed ? "green" : "amber"}>
                         {sp.isListed ? "Listed" : "Unlisted"}
                       </Badge>
-                      {sp.user.suspended && <Badge color="red">Suspended</Badge>}
+                      {sp.user.suspended && (
+                        <Badge color="red">Suspended</Badge>
+                      )}
+                      {!vscOnFile.has(sp.user.id) && (
+                        <Link href="/admin/screening">
+                          <Badge color="red">No current VSC</Badge>
+                        </Link>
+                      )}
+                      <span className="text-xs text-slate-500">
+                        {upcomingHours(sp.slots, "OPEN")}h open ·{" "}
+                        {upcomingHours(sp.slots, "BOOKED")}h booked
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/admin/sitters/${sp.id}`}
-                      className="text-sm font-medium text-indigo-600"
+                      className="text-sm font-medium text-brand-coral"
                     >
-                      Availability
+                      Hours
                     </Link>
                     <ListingToggle
                       sitterProfileId={sp.id}
                       isListed={sp.isListed}
+                    />
+                    <ShowcaseToggle
+                      sitterProfileId={sp.id}
+                      showcased={sp.showcased}
+                      optedIn={sp.publicOptIn}
                     />
                     <SuspendButton
                       userId={sp.user.id}
@@ -173,18 +268,19 @@ export default async function AdminDashboard() {
                   <div>
                     <p className="text-sm">{r.reason}</p>
                     <p className="mt-1 text-xs text-slate-500">
-                      by {r.reporter.name} · booking{" "}
-                      {r.booking.parent.name} / {r.booking.sitter.name} ·{" "}
-                      {dt(r.createdAt)}
+                      by {r.reporter.name} · booking {r.booking.parent.name} /{" "}
+                      {r.booking.sitter.name} · {dt(r.createdAt)}
                     </p>
                     <Link
                       href={`/bookings/${r.booking.id}`}
-                      className="text-xs font-medium text-indigo-600"
+                      className="text-xs font-medium text-brand-coral"
                     >
                       View booking
                     </Link>
                   </div>
-                  <Badge color={REPORT_STATUS_COLOR[r.status]}>{r.status}</Badge>
+                  <Badge color={REPORT_STATUS_COLOR[r.status]}>
+                    {r.status}
+                  </Badge>
                 </div>
                 {r.status !== "RESOLVED" && r.status !== "DISMISSED" && (
                   <div className="mt-2">
@@ -199,7 +295,15 @@ export default async function AdminDashboard() {
 
       {/* Recent bookings */}
       <section>
-        <h2 className="mb-3 font-semibold">Recent bookings</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">Recent bookings</h2>
+          <Link
+            href="/admin/bookings"
+            className="text-sm font-medium text-brand-coral"
+          >
+            Open bookings calendar
+          </Link>
+        </div>
         {bookings.length === 0 ? (
           <EmptyState>No bookings yet.</EmptyState>
         ) : (
@@ -209,6 +313,9 @@ export default async function AdminDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">
+                      <span className="font-mono text-xs text-slate-400">
+                        {bookingRef(b.bookingNumber)}
+                      </span>{" "}
                       {b.parent.name} → {b.sitter.name}
                     </p>
                     <p className="text-xs text-slate-500">
@@ -224,7 +331,7 @@ export default async function AdminDashboard() {
                     </Badge>
                     <Link
                       href={`/bookings/${b.id}`}
-                      className="text-sm font-medium text-indigo-600"
+                      className="text-sm font-medium text-brand-coral"
                     >
                       View
                     </Link>

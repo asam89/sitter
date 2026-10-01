@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
@@ -15,8 +16,15 @@ export default async function ApplicationsPage() {
   });
 
   const pending = applications.filter(
-    (a) => a.status === "APPLIED" || a.status === "UNDER_REVIEW",
+    (a) =>
+      a.status === "APPLIED" ||
+      a.status === "UNDER_REVIEW" ||
+      a.status === "INTERVIEW",
   );
+
+  // datetime-local wants "yyyy-MM-ddThh:mm" in local-ish form.
+  const toLocalInput = (d: Date | null) =>
+    d ? d.toISOString().slice(0, 16) : "";
   const decided = applications.filter(
     (a) => a.status === "VETTED" || a.status === "REJECTED",
   );
@@ -38,11 +46,37 @@ export default async function ApplicationsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-medium">
-                    {a.user.name}{" "}
+                    <Link
+                      href={`/admin/roster/${a.userId}`}
+                      className="hover:text-brand-coral"
+                    >
+                      {a.user.name}
+                    </Link>{" "}
                     <span className="text-sm text-slate-400">
                       {a.user.email}
                     </span>
                   </p>
+                  {a.whatsappPhone && (
+                    <p className="mt-1 text-sm text-slate-600">
+                      <span className="font-medium">Mobile:</span>{" "}
+                      {a.whatsappPhone}
+                      {a.whatsappReachable ? (
+                        <>
+                          {" · "}
+                          <a
+                            href={`https://wa.me/${a.whatsappPhone.replace(/\D/g, "")}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand-coral"
+                          >
+                            WhatsApp
+                          </a>
+                        </>
+                      ) : (
+                        " · not on WhatsApp"
+                      )}
+                    </p>
+                  )}
                   <p className="mt-1 text-sm text-slate-600">{a.bio}</p>
                   <p className="mt-1 text-sm text-slate-600">
                     <span className="font-medium">Experience:</span>{" "}
@@ -55,7 +89,7 @@ export default async function ApplicationsPage() {
                     </p>
                   )}
                   {a.documentUrls.length > 0 && (
-                    <ul className="mt-1 text-sm text-indigo-600">
+                    <ul className="mt-1 text-sm text-brand-coral">
                       {a.documentUrls.map((u) => (
                         <li key={u}>
                           <a href={u} target="_blank" rel="noreferrer">
@@ -69,6 +103,15 @@ export default async function ApplicationsPage() {
                     Target rate: {moneyHr(a.targetPayRate)} · applied{" "}
                     {dt(a.createdAt)}
                   </p>
+                  {a.status === "INTERVIEW" && (
+                    <p className="mt-2 rounded-lg bg-brand-cream px-3 py-2 text-sm text-brand-teal">
+                      <span className="font-medium">Interview</span>
+                      {a.interviewScheduledAt
+                        ? ` scheduled for ${dt(a.interviewScheduledAt)}`
+                        : " — no time set yet"}
+                      {a.interviewNotes ? ` · ${a.interviewNotes}` : ""}
+                    </p>
+                  )}
                 </div>
                 <Badge color={APPLICATION_STATUS_COLOR[a.status]}>
                   {a.status.replace("_", " ")}
@@ -79,6 +122,8 @@ export default async function ApplicationsPage() {
                   applicationId={a.id}
                   status={a.status}
                   targetPayRate={a.targetPayRate}
+                  interviewScheduledAt={toLocalInput(a.interviewScheduledAt)}
+                  interviewNotes={a.interviewNotes}
                 />
               </div>
             </Card>
@@ -95,7 +140,12 @@ export default async function ApplicationsPage() {
             <Card key={a.id}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">{a.user.name}</p>
+                  <Link
+                    href={`/admin/roster/${a.userId}`}
+                    className="font-medium hover:text-brand-coral"
+                  >
+                    {a.user.name}
+                  </Link>
                   <p className="text-sm text-slate-500">
                     Target {moneyHr(a.targetPayRate)}
                     {a.reviewedAt ? ` · reviewed ${dt(a.reviewedAt)}` : ""}

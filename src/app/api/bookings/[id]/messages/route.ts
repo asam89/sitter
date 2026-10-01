@@ -43,7 +43,12 @@ export async function POST(
     return NextResponse.json({ error: res.error }, { status: res.status });
 
   // Messaging unlocks once a booking exists — always free, no tier/paywall gate.
-  const unlocked = ["REQUESTED", "CONFIRMED", "COMPLETED"].includes(
+  const unlocked = [
+    "REQUESTED",
+    "APPROVED",
+    "IN_PROGRESS",
+    "COMPLETED",
+  ].includes(
     res.booking.status,
   );
   if (!unlocked) {

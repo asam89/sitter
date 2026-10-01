@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "PipelineNudgeKind" ADD VALUE 'SITTER_WEEKLY_SCHEDULE';

@@ -1,51 +1,94 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { PLACEHOLDER_TERMS_BODY, PLACEHOLDER_TERMS_VERSION } from "../src/lib/terms";
+import { DEFAULT_TERMS_BODY, DEFAULT_TERMS_VERSION } from "../src/lib/terms";
 
 const prisma = new PrismaClient();
 
 async function main() {
   const pw = await bcrypt.hash("password123", 10);
 
-  // Business settings singleton + active placeholder terms.
+  // Business settings singleton + active terms.
   await prisma.businessSettings.upsert({
     where: { id: "singleton" },
     update: {},
     create: { id: "singleton" },
   });
   await prisma.termsVersion.upsert({
-    where: { version: PLACEHOLDER_TERMS_VERSION },
+    where: { version: DEFAULT_TERMS_VERSION },
     update: { active: true },
     create: {
-      version: PLACEHOLDER_TERMS_VERSION,
-      body: PLACEHOLDER_TERMS_BODY,
+      version: DEFAULT_TERMS_VERSION,
+      body: DEFAULT_TERMS_BODY,
       active: true,
     },
   });
 
-  // Sitbaby admin
+  // Ri'aya admin
   await prisma.user.upsert({
     where: { email: "admin@sitbaby.test" },
     update: { role: "ADMIN" },
     create: {
       email: "admin@sitbaby.test",
-      name: "Sitbaby Admin",
+      name: "Ri'aya Admin",
       passwordHash: pw,
       role: "ADMIN",
     },
   });
 
-  // Parent
+  // Parent — fully verified (Level 2) so booking demos work at any gate level.
   await prisma.user.upsert({
     where: { email: "parent@sitbaby.test" },
-    update: {},
+    update: {
+      emailVerified: new Date(),
+      phoneVerified: true,
+      verificationLevel: "LEVEL_2_IDENTITY",
+      parentProfile: {
+        update: {
+          streetAddress: "12 Maple St",
+          province: "ON",
+          postalCode: "L1S 1A1",
+          identityVerified: true,
+          verifiedName: "Aisha Parent",
+          idVerificationProvider: "manual",
+          idVerifiedAt: new Date(),
+        },
+      },
+    },
     create: {
       email: "parent@sitbaby.test",
       name: "Aisha Parent",
       passwordHash: pw,
       role: "PARENT",
       phone: "+1-905-555-0100",
-      parentProfile: { create: { city: "Ajax", address: "12 Maple St, Ajax ON" } },
+      emailVerified: new Date(),
+      phoneVerified: true,
+      verificationLevel: "LEVEL_2_IDENTITY",
+      parentProfile: {
+        create: {
+          city: "Ajax",
+          address: "12 Maple St, Ajax ON",
+          streetAddress: "12 Maple St",
+          province: "ON",
+          postalCode: "L1S 1A1",
+          identityVerified: true,
+          verifiedName: "Aisha Parent",
+          idVerificationProvider: "manual",
+          idVerifiedAt: new Date(),
+        },
+      },
+    },
+  });
+
+  // Parent — brand new, unverified (Level 0) to demo the KYC gate & flow.
+  await prisma.user.upsert({
+    where: { email: "parent.new@sitbaby.test" },
+    update: {},
+    create: {
+      email: "parent.new@sitbaby.test",
+      name: "Noor Newparent",
+      passwordHash: pw,
+      role: "PARENT",
+      parentProfile: { create: {} },
     },
   });
 
@@ -65,6 +108,8 @@ async function main() {
           certifications: ["CPR", "First Aid"],
           documentUrls: ["https://example.com/mariam-cpr.pdf"],
           targetPayRate: 22,
+          whatsappPhone: "+14165550122",
+          whatsappReachable: true,
           status: "VETTED",
           reviewedAt: new Date(),
         },
@@ -114,6 +159,8 @@ async function main() {
           certifications: ["First Aid"],
           documentUrls: [],
           targetPayRate: 18,
+          whatsappPhone: "+14165550118",
+          whatsappReachable: false,
           status: "VETTED",
           reviewedAt: new Date(),
         },
@@ -140,11 +187,13 @@ async function main() {
       role: "SITTER",
       application: {
         create: {
-          bio: "New to Sitbaby, lots of family childcare experience.",
+          bio: "New to Ri'aya, lots of family childcare experience.",
           experience: "Cared for younger siblings and cousins for years.",
           certifications: ["CPR"],
           documentUrls: ["https://example.com/sam-cpr.pdf"],
           targetPayRate: 19,
+          whatsappPhone: "+14165550119",
+          whatsappReachable: true,
           status: "APPLIED",
         },
       },
@@ -152,7 +201,7 @@ async function main() {
   });
 
   console.log(
-    "Seed complete. Login with any *@sitbaby.test / password123 (admin@, parent@, sitter.listed@, sitter.unlisted@, sitter.applicant@)",
+    "Seed complete. Login with any *@sitbaby.test / password123 (admin@, parent@ [verified], parent.new@ [unverified], sitter.listed@, sitter.unlisted@, sitter.applicant@)",
   );
 }
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  moveApplicationToInterview,
   moveApplicationUnderReview,
   rejectApplication,
   setListed,
@@ -9,6 +10,7 @@ import {
   updateReportStatus,
   vetApplication,
 } from "@/lib/actions";
+import { setSitterShowcased } from "@/lib/sitter-profile-actions";
 import { ActionButton } from "@/components/ActionButton";
 import { buttonClass } from "@/components/ui";
 
@@ -29,6 +31,34 @@ export function ListingToggle({
       variant={isListed ? "secondary" : "primary"}
     >
       {isListed ? "Un-list" : "List"}
+    </ActionButton>
+  );
+}
+
+// Admin approval to feature a sitter on the public "Meet our team" page. Only
+// meaningful once the sitter has opted in; the button hints when they haven't.
+export function ShowcaseToggle({
+  sitterProfileId,
+  showcased,
+  optedIn,
+}: {
+  sitterProfileId: string;
+  showcased: boolean;
+  optedIn: boolean;
+}) {
+  if (!optedIn && !showcased) {
+    return (
+      <span className="text-xs text-slate-400">
+        Hasn&apos;t agreed to team page
+      </span>
+    );
+  }
+  return (
+    <ActionButton
+      action={setSitterShowcased.bind(null, sitterProfileId, !showcased)}
+      variant={showcased ? "secondary" : "primary"}
+    >
+      {showcased ? "Remove from team page" : "Feature on team page"}
     </ActionButton>
   );
 }
@@ -71,12 +101,53 @@ export function ApplicationReview({
   applicationId,
   status,
   targetPayRate,
+  interviewScheduledAt,
+  interviewNotes,
 }: {
   applicationId: string;
-  status: "APPLIED" | "UNDER_REVIEW" | "VETTED" | "REJECTED";
+  status: "APPLIED" | "UNDER_REVIEW" | "INTERVIEW" | "VETTED" | "REJECTED";
   targetPayRate: number;
+  interviewScheduledAt?: string | null;
+  interviewNotes?: string | null;
 }) {
-  const [mode, setMode] = useState<"none" | "vet" | "reject">("none");
+  const [mode, setMode] = useState<"none" | "vet" | "reject" | "interview">(
+    "none",
+  );
+
+  if (mode === "interview")
+    return (
+      <form action={moveApplicationToInterview} className="space-y-2">
+        <input type="hidden" name="applicationId" value={applicationId} />
+        <label className="block text-sm font-medium">
+          Interview time (optional — shown to the applicant)
+          <input
+            type="datetime-local"
+            name="interviewScheduledAt"
+            defaultValue={interviewScheduledAt ?? ""}
+            className={inputCls}
+          />
+        </label>
+        <textarea
+          name="interviewNotes"
+          placeholder="Internal interview notes (optional)"
+          rows={2}
+          defaultValue={interviewNotes ?? ""}
+          className={inputCls}
+        />
+        <div className="flex gap-2">
+          <button type="submit" className={buttonClass()}>
+            Move to interview
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("none")}
+            className={buttonClass("secondary")}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
 
   if (mode === "vet")
     return (
@@ -148,6 +219,22 @@ export function ApplicationReview({
         >
           Start review
         </ActionButton>
+      )}
+      {status !== "INTERVIEW" && (
+        <button
+          onClick={() => setMode("interview")}
+          className={buttonClass("secondary")}
+        >
+          Schedule interview
+        </button>
+      )}
+      {status === "INTERVIEW" && (
+        <button
+          onClick={() => setMode("interview")}
+          className={buttonClass("secondary")}
+        >
+          Update interview
+        </button>
       )}
       <button onClick={() => setMode("vet")} className={buttonClass()}>
         Vet &amp; list rate

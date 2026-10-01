@@ -11,7 +11,7 @@ export function Card({
   return (
     <div
       className={clsx(
-        "rounded-xl border border-slate-200 bg-white p-5 shadow-sm",
+        "rounded-xl border border-brand-teal/10 bg-white p-5 shadow-sm",
         className,
       )}
     >
@@ -29,8 +29,10 @@ export function PageTitle({
 }) {
   return (
     <div className="mb-6">
-      <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-      {subtitle && <p className="mt-1 text-slate-600">{subtitle}</p>}
+      <h1 className="text-2xl font-bold tracking-tight text-brand-ink">
+        {title}
+      </h1>
+      {subtitle && <p className="mt-1 text-brand-teal-light">{subtitle}</p>}
     </div>
   );
 }
@@ -55,8 +57,8 @@ export function buttonClass(variant: "primary" | "secondary" = "primary") {
   return clsx(
     "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition disabled:opacity-50",
     variant === "primary"
-      ? "bg-indigo-600 text-white hover:bg-indigo-700"
-      : "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
+      ? "bg-brand-coral text-white hover:bg-brand-coral-dark"
+      : "border border-brand-teal/30 bg-white text-brand-teal hover:bg-brand-cream",
   );
 }
 
@@ -72,7 +74,7 @@ export function Badge({
     green: "bg-emerald-100 text-emerald-800",
     amber: "bg-amber-100 text-amber-800",
     red: "bg-red-100 text-red-800",
-    indigo: "bg-indigo-100 text-indigo-800",
+    indigo: "bg-brand-blue/25 text-brand-ink",
   };
   return (
     <span
@@ -88,7 +90,7 @@ export function Badge({
 
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+    <div className="rounded-xl border border-dashed border-brand-teal/25 bg-white p-8 text-center text-brand-teal-light">
       {children}
     </div>
   );

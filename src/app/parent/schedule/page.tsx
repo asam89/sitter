@@ -1,15 +1,28 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
+import { getParentBookingEligibility } from "@/lib/verification";
 import { getBusinessSettings } from "@/lib/settings";
-import { isLastMinute } from "@/lib/pricing";
-import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
-import { dt, moneyHr } from "@/lib/format";
+import { effectiveRate, isLastMinute } from "@/lib/pricing";
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  EmptyState,
+  PageTitle,
+} from "@/components/ui";
+import { dt, moneyHr, time } from "@/lib/format";
+import { sittersWithCurrentVsc } from "@/lib/screening";
+import { isShareable, sitterSharePath } from "@/lib/public-sitter";
 
 export const dynamic = "force-dynamic";
 
 export default async function SchedulePage() {
-  await requireRole("PARENT");
+  const user = await requireRole("PARENT");
+  const eligibility = await getParentBookingEligibility(user.id);
+  // Booking is gated on verification level; send unverified parents to verify.
+  if (!eligibility.canBook) redirect("/parent/verify");
   const settings = await getBusinessSettings();
 
   // Only listed sitters (and only their non-suspended accounts) with future
@@ -21,7 +34,7 @@ export default async function SchedulePage() {
       slots: { some: { status: "OPEN", startTime: { gte: new Date() } } },
     },
     include: {
-      user: { select: { name: true } },
+      user: { select: { name: true, suspended: true } },
       slots: {
         where: { status: "OPEN", startTime: { gte: new Date() } },
         orderBy: { startTime: "asc" },
@@ -29,13 +42,26 @@ export default async function SchedulePage() {
     },
     orderBy: { listedPayRate: "asc" },
   });
+  // Families see only that a check is on file — never the document, the police
+  // service, or any dates from it.
+  const vscOnFile = await sittersWithCurrentVsc(sitters.map((sp) => sp.userId));
 
   return (
     <div className="space-y-6">
       <PageTitle
         title="Available sitters"
-        subtitle="Every sitter here is vetted and listed by Sitbaby. Pick a time to book."
+        subtitle="Every sitter here is vetted and listed by Ri'aya. Pick a time to book."
       />
+      <Card className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-brand-teal">
+          Don&apos;t see the time you need? Post a request and every listed
+          sitter can pick it up.
+        </p>
+        <ButtonLink href="/parent/requests/new" variant="secondary">
+          Request a time
+        </ButtonLink>
+      </Card>
+
       {sitters.length === 0 ? (
         <EmptyState>No open availability right now — check back soon.</EmptyState>
       ) : (
@@ -44,12 +70,28 @@ export default async function SchedulePage() {
             <Card key={sp.id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="font-semibold">{sp.user.name}</h2>
+                  <h2 className="font-semibold">
+                    {isShareable(sp) ? (
+                      <Link
+                        href={sitterSharePath(sp.id)}
+                        className="hover:text-brand-coral"
+                      >
+                        {sp.user.name}
+                      </Link>
+                    ) : (
+                      sp.user.name
+                    )}
+                  </h2>
+                  {vscOnFile.has(sp.userId) && (
+                    <p className="mt-1 text-xs font-medium text-emerald-700">
+                      Police vulnerable sector check verified by Ri&apos;aya
+                    </p>
+                  )}
                   {sp.bio && (
                     <p className="mt-1 text-sm text-slate-600">{sp.bio}</p>
                   )}
                 </div>
-                <Badge color="indigo">{moneyHr(sp.listedPayRate)}</Badge>
+                <Badge color="indigo">{moneyHr(effectiveRate(sp))}</Badge>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {sp.slots.map((slot) => {
@@ -61,9 +103,9 @@ export default async function SchedulePage() {
                     <Link
                       key={slot.id}
                       href={`/parent/book/${slot.id}`}
-                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-indigo-500 hover:bg-indigo-50"
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-brand-teal hover:bg-brand-cream"
                     >
-                      {dt(slot.startTime)}
+                      {dt(slot.startTime)} – {time(slot.endTime)}
                       {rush && (
                         <span className="ml-1 text-xs text-amber-700">
                           (last-minute)

@@ -3,5 +3,10 @@
 @tailwind utilities;
 
 :root {
-  --brand: 79 70 229; /* indigo-600 */
+  --brand: 233 124 93; /* brand coral */
+}
+
+body {
+  background-color: #f8f5ec;
+  color: #234e48;
 }

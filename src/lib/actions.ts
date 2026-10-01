@@ -1,20 +1,68 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { differenceInMinutes } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import {
+  remainders,
+  resolveWindow,
+  slotDurationHours,
+} from "@/lib/slot-window";
 import { requireUser, requireRole } from "@/lib/session";
 import { getBusinessSettings, updateBusinessSettings } from "@/lib/settings";
-import { computePrice, isLastMinute } from "@/lib/pricing";
+import {
+  computePrice,
+  effectiveRate,
+  isLastMinute,
+  sitterPayout,
+} from "@/lib/pricing";
+import { computeRefund } from "@/lib/cancellation";
+import {
+  copyRequestMedicalToBooking,
+  parseChildMedical,
+  storeChildMedical,
+} from "@/lib/child-medical";
 import { getActiveTerms } from "@/lib/terms";
+import { dt, time } from "@/lib/format";
+import {
+  ensureServiceAddress,
+  meetsLevel,
+  LEVEL_LABEL,
+} from "@/lib/verification";
 import { stripeEnabled, stripe } from "@/lib/stripe";
 import {
+  payoutAmount,
+  syncConnectAccount,
+  transferToSitter,
+} from "@/lib/payouts";
+import {
+  notifyBookingEvent,
+  type BookingEvent,
+} from "@/lib/booking-notifications";
+import {
+  notifySitterVetted,
+  notifySitterListed,
+} from "@/lib/sitter-account-notifications";
+import {
+  notifyAdminsOfApplication,
+  notifyAdminsOfBooking,
+  notifyAdminsOfOpenRequest,
+} from "@/lib/admin-notifications";
+import { notifyListedSittersOfRequest } from "@/lib/request-notifications";
+import { markCardPaid } from "@/lib/payments";
+import { Prisma, type Booking, type BusinessSettings } from "@prisma/client";
+import {
+  adminBookingSchema,
   applicationSchema,
+  bookingRequestSchema,
   bookingSchema,
+  interviewSchema,
   linesToArray,
   reportSchema,
+  reviewSchema,
   settingsSchema,
+  sitterRateSchema,
   slotSchema,
   vetSchema,
 } from "@/lib/validation";
@@ -24,13 +72,95 @@ function s(fd: FormData, key: string): string {
   return typeof v === "string" ? v : "";
 }
 
-function slotDurationHours(startTime: Date, endTime: Date): number {
-  return Math.max(1, Math.round(differenceInMinutes(endTime, startTime) / 60));
+// Evidence captured alongside a waiver acceptance. Behind a proxy the client IP
+// arrives in x-forwarded-for (first hop), which is how prod (nginx) serves.
+function waiverAcceptanceContext(): {
+  ip: string | null;
+  userAgent: string | null;
+} {
+  const h = headers();
+  const forwarded = h.get("x-forwarded-for");
+  return {
+    ip: forwarded?.split(",")[0]?.trim() || h.get("x-real-ip") || null,
+    userAgent: h.get("user-agent"),
+  };
+}
+
+// A booking loaded with the fields needed to notify both parties.
+type BookingForNotify = {
+  id: string;
+  dateTime: Date;
+  durationHours: number;
+  baseAmount: number;
+  rushFeeAmount: number;
+  platformFeeAmount: number;
+  totalAmount: number;
+  parentId: string;
+  sitterId: string;
+  parent: { name: string; email: string; phone: string | null };
+  sitter: { name: string; email: string; phone: string | null };
+  availabilitySlot: { sitterProfile: { city: string | null } };
+};
+
+const notifyInclude = {
+  parent: { select: { name: true, email: true, phone: true } },
+  sitter: { select: { name: true, email: true, phone: true } },
+  availabilitySlot: { select: { sitterProfile: { select: { city: true } } } },
+} as const;
+
+// Fan a lifecycle event out to the sitter and/or parent across enabled channels.
+async function notify(
+  event: BookingEvent,
+  audiences: Array<"SITTER" | "PARENT">,
+  booking: BookingForNotify,
+  settings: BusinessSettings,
+) {
+  const base = {
+    bookingId: booking.id,
+    settings,
+    parentName: booking.parent.name,
+    sitterName: booking.sitter.name,
+    when: booking.dateTime,
+    durationHours: booking.durationHours,
+    city: booking.availabilitySlot.sitterProfile.city,
+    sitterEarns: sitterPayout(booking),
+    total: booking.totalAmount,
+  };
+  for (const audience of audiences) {
+    const recipient =
+      audience === "SITTER"
+        ? {
+            userId: booking.sitterId,
+            email: booking.sitter.email,
+            phone: booking.sitter.phone,
+          }
+        : {
+            userId: booking.parentId,
+            email: booking.parent.email,
+            phone: booking.parent.phone,
+          };
+    await notifyBookingEvent(event, { ...base, audience, recipient });
+  }
 }
 
 // ---------- Sitter: application ----------
 
-export async function submitApplication(fd: FormData) {
+export type ApplicationFormState = { error?: string };
+
+// Zod paths → the wording on the form, so a rejected answer names itself.
+const APPLICATION_FIELD_LABELS: Record<string, string> = {
+  bio: "About you",
+  experience: "Childcare experience",
+  certifications: "Certifications",
+  documentUrls: "Document links",
+  targetPayRate: "Target hourly pay rate",
+  whatsappPhone: "Mobile number",
+};
+
+export async function submitApplication(
+  _prevState: ApplicationFormState,
+  fd: FormData,
+): Promise<ApplicationFormState> {
   const user = await requireRole("SITTER");
   const parsed = applicationSchema.safeParse({
     bio: s(fd, "bio"),
@@ -38,18 +168,33 @@ export async function submitApplication(fd: FormData) {
     certifications: s(fd, "certifications"),
     documentUrls: s(fd, "documentUrls"),
     targetPayRate: s(fd, "targetPayRate"),
+    whatsappPhone: s(fd, "whatsappPhone"),
+    whatsappReachable: s(fd, "whatsappReachable"),
   });
-  if (!parsed.success) throw new Error("Invalid application");
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = String(issue?.path[0] ?? "");
+    const label =
+      APPLICATION_FIELD_LABELS[field] ?? (field ? field : "One of the answers");
+    return { error: `${label}: ${issue?.message ?? "please check this field."}` };
+  }
   const d = parsed.data;
 
-  // An APPLIED/UNDER_REVIEW application can be resubmitted; once VETTED it is
-  // locked (profile exists). REJECTED can re-apply.
+  // An APPLIED/UNDER_REVIEW/INTERVIEW application can be resubmitted; once
+  // VETTED it is locked (profile exists). REJECTED can re-apply.
   const existing = await prisma.sitterApplication.findUnique({
     where: { userId: user.id },
   });
   if (existing?.status === "VETTED") {
-    throw new Error("You are already vetted.");
+    return { error: "You are already vetted \u2014 nothing to resubmit." };
   }
+
+  const wasResubmitted = existing !== null;
+  // A resubmission must not undo the admin's work: a booked interview and its
+  // notes survive an edit, and only a REJECTED application restarts at APPLIED.
+  const keepReview =
+    existing !== null &&
+    (existing.status === "UNDER_REVIEW" || existing.status === "INTERVIEW");
 
   await prisma.sitterApplication.upsert({
     where: { userId: user.id },
@@ -60,6 +205,8 @@ export async function submitApplication(fd: FormData) {
       certifications: linesToArray(d.certifications),
       documentUrls: linesToArray(d.documentUrls),
       targetPayRate: d.targetPayRate,
+      whatsappPhone: d.whatsappPhone,
+      whatsappReachable: d.whatsappReachable,
       status: "APPLIED",
     },
     update: {
@@ -68,28 +215,84 @@ export async function submitApplication(fd: FormData) {
       certifications: linesToArray(d.certifications),
       documentUrls: linesToArray(d.documentUrls),
       targetPayRate: d.targetPayRate,
-      status: "APPLIED",
-      reviewedByAdminId: null,
-      reviewedAt: null,
+      whatsappPhone: d.whatsappPhone,
+      whatsappReachable: d.whatsappReachable,
+      ...(keepReview
+        ? {}
+        : {
+            status: "APPLIED" as const,
+            reviewedByAdminId: null,
+            reviewedAt: null,
+            interviewScheduledAt: null,
+            interviewNotes: null,
+          }),
     },
   });
+  // The application number doubles as the sitter's contact number: keep it on
+  // the account so booking texts reach them, but never clear a verified phone.
+  const account = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { phone: true, phoneVerified: true },
+  });
+  if (!account?.phoneVerified && account?.phone !== d.whatsappPhone) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { phone: d.whatsappPhone },
+    });
+  }
+
+  await notifyAdminsOfApplication({
+    name: user.name ?? null,
+    email: user.email ?? null,
+    targetPayRate: d.targetPayRate,
+    resubmitted: wasResubmitted,
+    whatsappPhone: d.whatsappPhone,
+    whatsappReachable: d.whatsappReachable,
+  });
+
   revalidatePath("/sitter");
   redirect("/sitter");
 }
 
+// ---------- Sitter: own hourly rate ----------
+
+// Sitters price their own time. Existing and future bookings keep the rate they
+// were quoted at (pricing is snapshotted on the booking), so a change here only
+// affects new bookings.
+export async function setMyRate(fd: FormData) {
+  const user = await requireRole("SITTER");
+  const parsed = sitterRateSchema.safeParse({ baseRate: s(fd, "baseRate") });
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? "Invalid rate");
+  }
+  await prisma.sitterProfile.update({
+    where: { userId: user.id },
+    data: { baseRate: parsed.data.baseRate },
+  });
+  revalidatePath("/sitter");
+  revalidatePath("/parent/schedule");
+}
+
 // ---------- Sitter / Admin: availability ----------
 
-async function createSlotFor(sitterProfileId: string, fd: FormData) {
+function parseSlot(fd: FormData) {
   const parsed = slotSchema.safeParse({
     startTime: s(fd, "startTime"),
     endTime: s(fd, "endTime"),
+    isLastMinuteEligible: s(fd, "isLastMinuteEligible"),
   });
   if (!parsed.success) throw new Error("Invalid time range");
+  return parsed.data;
+}
+
+async function createSlotFor(sitterProfileId: string, fd: FormData) {
+  const d = parseSlot(fd);
   await prisma.availabilitySlot.create({
     data: {
       sitterProfileId,
-      startTime: new Date(parsed.data.startTime),
-      endTime: new Date(parsed.data.endTime),
+      startTime: new Date(d.startTime),
+      endTime: new Date(d.endTime),
+      isLastMinuteEligible: d.isLastMinuteEligible,
     },
   });
 }
@@ -100,6 +303,26 @@ export async function addMySlot(fd: FormData) {
     where: { userId: user.id },
   });
   await createSlotFor(profile.id, fd);
+  revalidatePath("/sitter/availability");
+  revalidatePath("/sitter");
+}
+
+// Edit an OPEN slot's time window / last-minute eligibility. Booked slots are
+// locked (their booking pins the time) so this only touches OPEN slots.
+export async function editMySlot(slotId: string, fd: FormData) {
+  const user = await requireRole("SITTER");
+  const profile = await prisma.sitterProfile.findUniqueOrThrow({
+    where: { userId: user.id },
+  });
+  const d = parseSlot(fd);
+  await prisma.availabilitySlot.updateMany({
+    where: { id: slotId, sitterProfileId: profile.id, status: "OPEN" },
+    data: {
+      startTime: new Date(d.startTime),
+      endTime: new Date(d.endTime),
+      isLastMinuteEligible: d.isLastMinuteEligible,
+    },
+  });
   revalidatePath("/sitter/availability");
   revalidatePath("/sitter");
 }
@@ -119,6 +342,25 @@ export async function adminAddSlot(sitterProfileId: string, fd: FormData) {
   await requireRole("ADMIN");
   await createSlotFor(sitterProfileId, fd);
   revalidatePath(`/admin/sitters/${sitterProfileId}`);
+}
+
+// Admin adjusts a sitter's hours. Booked slots stay locked (their booking pins
+// the time) — cancel the booking first if the time has to move.
+export async function adminEditSlot(slotId: string, fd: FormData) {
+  await requireRole("ADMIN");
+  const d = parseSlot(fd);
+  const slot = await prisma.availabilitySlot.findUnique({
+    where: { id: slotId },
+  });
+  await prisma.availabilitySlot.updateMany({
+    where: { id: slotId, status: "OPEN" },
+    data: {
+      startTime: new Date(d.startTime),
+      endTime: new Date(d.endTime),
+      isLastMinuteEligible: d.isLastMinuteEligible,
+    },
+  });
+  if (slot) revalidatePath(`/admin/sitters/${slot.sitterProfileId}`);
 }
 
 export async function adminDeleteSlot(slotId: string) {
@@ -143,6 +385,46 @@ export async function moveApplicationUnderReview(applicationId: string) {
   revalidatePath("/admin/applications");
 }
 
+// Move an applicant into the interview stage. An optional scheduled time is
+// surfaced to the applicant; notes are the reviewers' internal write-up.
+export async function moveApplicationToInterview(fd: FormData) {
+  await requireRole("ADMIN");
+  const parsed = interviewSchema.safeParse({
+    applicationId: s(fd, "applicationId"),
+    interviewScheduledAt: s(fd, "interviewScheduledAt"),
+    interviewNotes: s(fd, "interviewNotes"),
+  });
+  if (!parsed.success) throw new Error("Invalid interview input");
+  const { applicationId, interviewScheduledAt, interviewNotes } = parsed.data;
+  await prisma.sitterApplication.updateMany({
+    where: {
+      id: applicationId,
+      status: { in: ["APPLIED", "UNDER_REVIEW", "INTERVIEW"] },
+    },
+    data: {
+      status: "INTERVIEW",
+      interviewScheduledAt: interviewScheduledAt
+        ? new Date(interviewScheduledAt)
+        : null,
+      interviewNotes: interviewNotes || null,
+    },
+  });
+  revalidatePath("/admin/applications");
+  revalidatePath("/admin");
+}
+
+// Save/update the internal interview notes without changing the stage.
+export async function saveInterviewNotes(fd: FormData) {
+  await requireRole("ADMIN");
+  const applicationId = s(fd, "applicationId");
+  const interviewNotes = s(fd, "interviewNotes");
+  await prisma.sitterApplication.update({
+    where: { id: applicationId },
+    data: { interviewNotes: interviewNotes || null },
+  });
+  revalidatePath("/admin/applications");
+}
+
 export async function vetApplication(fd: FormData) {
   const admin = await requireRole("ADMIN");
   const parsed = vetSchema.safeParse({
@@ -155,6 +437,7 @@ export async function vetApplication(fd: FormData) {
 
   const app = await prisma.sitterApplication.findUniqueOrThrow({
     where: { id: applicationId },
+    include: { user: { select: { name: true, email: true } } },
   });
   if (app.status === "VETTED") return;
 
@@ -181,6 +464,10 @@ export async function vetApplication(fd: FormData) {
       update: { listedPayRate },
     }),
   ]);
+
+  // Let the sitter know they've been approved (best-effort; never blocks vetting).
+  await notifySitterVetted(app.user.email, app.user.name);
+
   revalidatePath("/admin/applications");
   revalidatePath("/admin");
 }
@@ -203,10 +490,17 @@ export async function rejectApplication(fd: FormData) {
 
 export async function setListed(sitterProfileId: string, isListed: boolean) {
   await requireRole("ADMIN");
-  await prisma.sitterProfile.update({
+  const profile = await prisma.sitterProfile.update({
     where: { id: sitterProfileId },
     data: { isListed },
+    include: { user: { select: { name: true, email: true } } },
   });
+
+  // Notify the sitter the first time they go live (best-effort).
+  if (isListed) {
+    await notifySitterListed(profile.user.email, profile.user.name);
+  }
+
   revalidatePath("/admin");
   revalidatePath("/admin/sitters");
 }
@@ -219,9 +513,36 @@ export async function updateSettings(fd: FormData) {
     rushFeeAmount: s(fd, "rushFeeAmount"),
     platformFeeType: s(fd, "platformFeeType"),
     platformFeeAmount: s(fd, "platformFeeAmount"),
+    minParentVerificationLevelToBook: s(fd, "minParentVerificationLevelToBook"),
+    completionConfirmedBy: s(fd, "completionConfirmedBy"),
+    notifySmsEnabled: s(fd, "notifySmsEnabled"),
+    notifyWhatsappEnabled: s(fd, "notifyWhatsappEnabled"),
+    minBookingHours: s(fd, "minBookingHours"),
+    extraChildFeeAmount: s(fd, "extraChildFeeAmount"),
+    lateNightFeeAmount: s(fd, "lateNightFeeAmount"),
+    lateNightStartHour: s(fd, "lateNightStartHour"),
+    lateNightEndHour: s(fd, "lateNightEndHour"),
+    overnightFeeAmount: s(fd, "overnightFeeAmount"),
+    overnightStartHour: s(fd, "overnightStartHour"),
+    overnightEndHour: s(fd, "overnightEndHour"),
+    refundFullBeforeHours: s(fd, "refundFullBeforeHours"),
+    lateCancelWindowHours: s(fd, "lateCancelWindowHours"),
+    midRefundPercent: s(fd, "midRefundPercent"),
+    lateRefundPercent: s(fd, "lateRefundPercent"),
+    afterStartRefundPercent: s(fd, "afterStartRefundPercent"),
+    sitterCancelRefundPercent: s(fd, "sitterCancelRefundPercent"),
+    etransferEmail: s(fd, "etransferEmail"),
+    supportEmail: s(fd, "supportEmail"),
+    reminderLeadHours: s(fd, "reminderLeadHours"),
+    reminderFinalLeadHours: s(fd, "reminderFinalLeadHours"),
   });
   if (!parsed.success) throw new Error("Invalid settings");
-  await updateBusinessSettings(parsed.data);
+  const { etransferEmail, supportEmail, ...rest } = parsed.data;
+  await updateBusinessSettings({
+    ...rest,
+    etransferEmail: etransferEmail || null,
+    supportEmail: supportEmail || null,
+  });
   revalidatePath("/admin/settings");
 }
 
@@ -242,15 +563,58 @@ export async function updateReportStatus(
 
 // ---------- Parent: booking ----------
 
-export type BookingFormState = { error?: string };
+export type BookingFormState = {
+  error?: string;
+  // Admin manual bookings only: the sitter already has a block in that window.
+  // Not fatal — the admin can resubmit with confirmOverlap to book anyway, so
+  // we echo the entered values back to repopulate the form.
+  overlapWarning?: string;
+  values?: AdminBookingValues;
+};
+
+export type AdminBookingValues = {
+  parentId: string;
+  sitterProfileId: string;
+  startTime: string;
+  durationHours: string;
+  childrenAgeRange: string;
+  numberOfChildren: string;
+  notes: string;
+};
 
 export async function createBooking(
   _prevState: BookingFormState,
   fd: FormData,
 ): Promise<BookingFormState> {
   const user = await requireRole("PARENT");
+
+  // Verification gate: a parent must meet the Admin-configured minimum level
+  // before any booking can be created.
+  const settings0 = await getBusinessSettings();
+  const account = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: { verificationLevel: true },
+  });
+  if (
+    !meetsLevel(
+      account.verificationLevel,
+      settings0.minParentVerificationLevelToBook,
+    )
+  ) {
+    return {
+      error: `Please finish verifying your account (${LEVEL_LABEL[settings0.minParentVerificationLevelToBook]} required) before booking.`,
+    };
+  }
+
+  // The sitter has to know where to go, so a parent booking below the LEVEL_2
+  // gate supplies the service address here and it is kept on their profile.
+  const address = await ensureServiceAddress(user.id, fd);
+  if (!address.ok) return { error: address.error };
+
   const parsed = bookingSchema.safeParse({
     slotId: s(fd, "slotId"),
+    startTime: s(fd, "startTime"),
+    durationHours: s(fd, "durationHours"),
     childrenAgeRange: s(fd, "childrenAgeRange"),
     numberOfChildren: s(fd, "numberOfChildren"),
     notes: s(fd, "notes"),
@@ -276,25 +640,63 @@ export async function createBooking(
 
   const settings = await getBusinessSettings();
   const terms = await getActiveTerms();
-  const duration = slotDurationHours(slot.startTime, slot.endTime);
-  const lastMinute = isLastMinute(
-    slot.startTime,
-    settings.lastMinuteThresholdHours,
+  if (slotDurationHours(slot.startTime, slot.endTime) < settings.minBookingHours) {
+    return {
+      error: `Bookings are a minimum of ${settings.minBookingHours} hours — this block is shorter than that.`,
+    };
+  }
+  const window = resolveWindow(
+    slot,
+    d.startTime || undefined,
+    d.durationHours,
+    settings.minBookingHours,
   );
+  if (!window) {
+    return {
+      error: `Pick a start time inside the block and at least ${settings.minBookingHours} hours that end by ${time(slot.endTime)}.`,
+    };
+  }
+  const duration = window.hours;
+  const lastMinute = isLastMinute(window.start, settings.lastMinuteThresholdHours);
   const price = computePrice(
-    slot.sitterProfile.listedPayRate,
+    effectiveRate(slot.sitterProfile),
     duration,
     lastMinute,
     settings,
+    window.start,
+    d.numberOfChildren,
   );
+  const acceptance = waiverAcceptanceContext();
 
-  // Atomically claim the slot so two parents can't book the same window.
-  const claimed = await prisma.availabilitySlot.updateMany({
-    where: { id: slot.id, status: "OPEN" },
-    data: { status: "BOOKED" },
+  // Atomically claim the window so two parents can't book the same hours. The
+  // block shrinks to exactly the booked hours; any hours left over on either
+  // side become their own open blocks so they stay bookable.
+  const claimed = await prisma.$transaction(async (tx) => {
+    const taken = await tx.availabilitySlot.updateMany({
+      where: {
+        id: slot.id,
+        status: "OPEN",
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+      },
+      data: { status: "BOOKED", startTime: window.start, endTime: window.end },
+    });
+    if (taken.count === 0) return false;
+    const leftovers = remainders(slot, window);
+    if (leftovers.length > 0) {
+      await tx.availabilitySlot.createMany({
+        data: leftovers.map((r) => ({
+          sitterProfileId: slot.sitterProfileId,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          isLastMinuteEligible: slot.isLastMinuteEligible,
+        })),
+      });
+    }
+    return true;
   });
-  if (claimed.count === 0) {
-    return { error: "That time slot was just booked." };
+  if (!claimed) {
+    return { error: "Those hours were just booked — pick another time." };
   }
 
   const booking = await prisma.booking.create({
@@ -302,7 +704,7 @@ export async function createBooking(
       parentId: user.id,
       sitterId: slot.sitterProfile.userId,
       availabilitySlotId: slot.id,
-      dateTime: slot.startTime,
+      dateTime: window.start,
       durationHours: duration,
       childrenAgeRange: d.childrenAgeRange,
       numberOfChildren: d.numberOfChildren,
@@ -311,108 +713,874 @@ export async function createBooking(
       baseAmount: price.base,
       isLastMinute: lastMinute,
       rushFeeAmount: price.rushFee,
+      extraChildFeeAmount: price.extraChildFee,
+      lateNightFeeAmount: price.lateNightFee,
+      overnightFeeAmount: price.overnightFee,
       platformFeeAmount: price.platformFee,
       totalAmount: price.total,
       waiverVersion: terms.version,
       waiverAcceptedAt: new Date(),
+      waiverAcceptedIp: acceptance.ip,
+      waiverAcceptedUserAgent: acceptance.userAgent,
       status: "REQUESTED",
     },
+    include: notifyInclude,
+  });
+
+  // Health details, encrypted and released to the sitter only once paid.
+  await storeChildMedical(
+    { bookingId: booking.id },
+    parseChildMedical(fd),
+    booking.dateTime,
+  );
+
+  // Alert the sitter across every enabled channel that a request is waiting.
+  await notify("REQUESTED", ["SITTER"], booking, settings);
+  await notifyAdminsOfBooking({
+    id: booking.id,
+    bookingNumber: booking.bookingNumber,
+    parentName: booking.parent.name,
+    sitterName: booking.sitter.name,
+    when: booking.dateTime,
+    durationHours: booking.durationHours,
+    totalAmount: booking.totalAmount,
+    isLastMinute: booking.isLastMinute,
   });
 
   redirect(`/bookings/${booking.id}`);
 }
 
-export async function payBooking(bookingId: string) {
-  const user = await requireRole("PARENT");
-  const booking = await prisma.booking.findUniqueOrThrow({
-    where: { id: bookingId },
+// ---------- Admin: manual booking on a parent's behalf ----------
+
+// Admin enters a booking for a parent who called/messaged instead of using the
+// app. It follows the normal lifecycle from here: the sitter still confirms, the
+// parent still accepts the waiver and pays, and the window becomes a BOOKED
+// block so it shows on the calendar and hours grid like any other booking.
+export async function adminCreateBooking(
+  _prevState: BookingFormState,
+  fd: FormData,
+): Promise<BookingFormState> {
+  const admin = await requireRole("ADMIN");
+  const parsed = adminBookingSchema.safeParse({
+    parentId: s(fd, "parentId"),
+    sitterProfileId: s(fd, "sitterProfileId"),
+    startTime: s(fd, "startTime"),
+    durationHours: s(fd, "durationHours"),
+    childrenAgeRange: s(fd, "childrenAgeRange"),
+    numberOfChildren: s(fd, "numberOfChildren"),
+    notes: s(fd, "notes"),
   });
-  if (booking.parentId !== user.id) throw new Error("Not your booking");
-  if (booking.status !== "REQUESTED") {
-    throw new Error("Booking is not awaiting payment");
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid booking input",
+    };
+  }
+  const d = parsed.data;
+  const start = new Date(d.startTime);
+  if (Number.isNaN(start.getTime())) {
+    return { error: "That date and time isn't valid." };
+  }
+  const end = new Date(start.getTime() + d.durationHours * 3600 * 1000);
+
+  const settings = await getBusinessSettings();
+  if (d.durationHours < settings.minBookingHours) {
+    return {
+      error: `Bookings are a minimum of ${settings.minBookingHours} hours.`,
+    };
   }
 
-  let paymentIntentId: string | null = null;
-  if (stripeEnabled && stripe) {
-    // Funds captured to the platform and held (escrow) until completion, then
-    // transferred to the sitter's connected account minus the platform fee.
-    const pi = await stripe.paymentIntents.create({
-      amount: booking.totalAmount * 100,
-      currency: "cad",
-      capture_method: "automatic",
-      metadata: { bookingId },
-    });
-    paymentIntentId = pi.id;
+  const [parent, profile] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: d.parentId },
+      select: { role: true, suspended: true },
+    }),
+    prisma.sitterProfile.findUnique({
+      where: { id: d.sitterProfileId },
+      include: { user: { select: { suspended: true, name: true } } },
+    }),
+  ]);
+  if (!parent || parent.role !== "PARENT" || parent.suspended) {
+    return { error: "That parent account can't be booked for." };
   }
-  await prisma.booking.update({
-    where: { id: bookingId },
+  if (!profile || !profile.isListed || profile.user.suspended) {
+    return { error: "That sitter isn't currently bookable." };
+  }
+  // An overlap is a warning, not a block: admins take these bookings by phone
+  // and often know the sitter's real availability better than the app does.
+  if (fd.get("confirmOverlap") !== "1") {
+    const conflict = await prisma.availabilitySlot.findFirst({
+      where: {
+        sitterProfileId: profile.id,
+        startTime: { lt: end },
+        endTime: { gt: start },
+      },
+      orderBy: { startTime: "asc" },
+    });
+    if (conflict) {
+      return {
+        overlapWarning:
+          `${profile.user.name} already has a ` +
+          `${conflict.status === "BOOKED" ? "booked" : "posted open"} block from ` +
+          `${dt(conflict.startTime)} to ${time(conflict.endTime)}. ` +
+          `Create it anyway only if you know she's free — the sitter still has to confirm.`,
+        values: {
+          parentId: d.parentId,
+          sitterProfileId: d.sitterProfileId,
+          startTime: d.startTime,
+          durationHours: String(d.durationHours),
+          childrenAgeRange: d.childrenAgeRange,
+          numberOfChildren: String(d.numberOfChildren),
+          notes: d.notes ?? "",
+        },
+      };
+    }
+  }
+
+  const terms = await getActiveTerms();
+  const lastMinute = isLastMinute(start, settings.lastMinuteThresholdHours);
+  const price = computePrice(
+    effectiveRate(profile),
+    d.durationHours,
+    lastMinute,
+    settings,
+    start,
+    d.numberOfChildren,
+  );
+
+  const slot = await prisma.availabilitySlot.create({
     data: {
-      status: "CONFIRMED",
-      paidAt: new Date(),
-      stripePaymentIntentId: paymentIntentId,
+      sitterProfileId: profile.id,
+      startTime: start,
+      endTime: end,
+      status: "BOOKED",
+      isLastMinuteEligible: lastMinute,
     },
   });
-  revalidatePath(`/bookings/${bookingId}`);
+  const booking = await prisma.booking.create({
+    data: {
+      parentId: d.parentId,
+      sitterId: profile.userId,
+      availabilitySlotId: slot.id,
+      dateTime: start,
+      durationHours: d.durationHours,
+      childrenAgeRange: d.childrenAgeRange,
+      numberOfChildren: d.numberOfChildren,
+      notes: d.notes || null,
+      listedRateSnapshot: price.listedRate,
+      baseAmount: price.base,
+      isLastMinute: lastMinute,
+      rushFeeAmount: price.rushFee,
+      extraChildFeeAmount: price.extraChildFee,
+      lateNightFeeAmount: price.lateNightFee,
+      overnightFeeAmount: price.overnightFee,
+      platformFeeAmount: price.platformFee,
+      totalAmount: price.total,
+      // Version pinned now; the parent's own acceptance is recorded at payment.
+      waiverVersion: terms.version,
+      createdByAdminId: admin.id,
+      status: "REQUESTED",
+    },
+    include: notifyInclude,
+  });
+
+  await notify("REQUESTED", ["SITTER", "PARENT"], booking, settings);
+  await notifyAdminsOfBooking({
+    id: booking.id,
+    bookingNumber: booking.bookingNumber,
+    parentName: booking.parent.name,
+    sitterName: booking.sitter.name,
+    when: booking.dateTime,
+    durationHours: booking.durationHours,
+    totalAmount: booking.totalAmount,
+    isLastMinute: booking.isLastMinute,
+  });
+
+  revalidatePath("/admin/bookings");
+  redirect(`/bookings/${booking.id}`);
 }
 
-// Either the parent or an Admin can mark a booking complete, releasing payout.
-export async function completeBooking(bookingId: string) {
-  const user = await requireUser();
-  const booking = await prisma.booking.findUniqueOrThrow({
-    where: { id: bookingId },
-    include: { sitter: { include: { sitterProfile: true } } },
+// ---------- Open requests (no published availability) ----------
+
+export type RequestFormState = { error?: string };
+
+// A parent asks for a time nobody has posted availability for. This creates no
+// booking and holds no slot: it goes on a board that Admin and every listed
+// sitter can see, and the first sitter to claim it turns it into a booking.
+export async function createBookingRequest(
+  _prevState: RequestFormState,
+  fd: FormData,
+): Promise<RequestFormState> {
+  const user = await requireRole("PARENT");
+
+  // Same verification gate as a direct booking — a request can become one.
+  const settings = await getBusinessSettings();
+  const account = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: { verificationLevel: true, name: true },
   });
-  const isParticipant =
-    booking.parentId === user.id || booking.sitterId === user.id;
-  if (!isParticipant && user.role !== "ADMIN") {
-    throw new Error("Not permitted");
-  }
-  if (booking.status !== "CONFIRMED") {
-    throw new Error("Booking must be paid before completion");
+  if (
+    !meetsLevel(
+      account.verificationLevel,
+      settings.minParentVerificationLevelToBook,
+    )
+  ) {
+    return {
+      error: `Please finish verifying your account (${LEVEL_LABEL[settings.minParentVerificationLevelToBook]} required) before requesting a sitter.`,
+    };
   }
 
-  if (stripeEnabled && stripe && booking.sitter.sitterProfile?.stripeAccountId) {
-    await stripe.transfers.create({
-      amount: (booking.baseAmount + booking.rushFeeAmount) * 100,
-      currency: "cad",
-      destination: booking.sitter.sitterProfile.stripeAccountId,
-      metadata: { bookingId },
-    });
+  const parsed = bookingRequestSchema.safeParse({
+    startTime: s(fd, "startTime"),
+    durationHours: s(fd, "durationHours"),
+    childrenAgeRange: s(fd, "childrenAgeRange"),
+    numberOfChildren: s(fd, "numberOfChildren"),
+    notes: s(fd, "notes"),
+    waiverAccepted: s(fd, "waiverAccepted"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
   }
-  await prisma.booking.update({
-    where: { id: bookingId },
+  const d = parsed.data;
+  const startTime = new Date(d.startTime);
+  if (Number.isNaN(startTime.getTime())) {
+    return { error: "Choose a valid date and start time." };
+  }
+  if (startTime.getTime() <= Date.now()) {
+    return { error: "Choose a start time in the future." };
+  }
+  if (d.durationHours < settings.minBookingHours) {
+    return {
+      error: `Bookings are a minimum of ${settings.minBookingHours} hours.`,
+    };
+  }
+
+  // A claimed request becomes a booking, so the address is required here too.
+  const address = await ensureServiceAddress(user.id, fd);
+  if (!address.ok) return { error: address.error };
+
+  const terms = await getActiveTerms();
+  const acceptance = waiverAcceptanceContext();
+  const request = await prisma.bookingRequest.create({
     data: {
-      status: "COMPLETED",
-      completedAt: new Date(),
-      payoutReleasedAt: new Date(),
+      parentId: user.id,
+      startTime,
+      durationHours: d.durationHours,
+      childrenAgeRange: d.childrenAgeRange,
+      numberOfChildren: d.numberOfChildren,
+      notes: d.notes || null,
+      waiverVersion: terms.version,
+      waiverAcceptedAt: new Date(),
+      waiverAcceptedIp: acceptance.ip,
+      waiverAcceptedUserAgent: acceptance.userAgent,
     },
   });
-  revalidatePath(`/bookings/${bookingId}`);
+
+  await storeChildMedical(
+    { bookingRequestId: request.id },
+    parseChildMedical(fd),
+    request.startTime,
+  );
+
+  const summary = {
+    requestNumber: request.requestNumber,
+    startTime: request.startTime,
+    durationHours: request.durationHours,
+    numberOfChildren: request.numberOfChildren,
+    childrenAgeRange: request.childrenAgeRange,
+    city: address.city,
+    isLastMinute: isLastMinute(startTime, settings.lastMinuteThresholdHours),
+  };
+  const listedSitterCount = await prisma.sitterProfile.count({
+    where: { isListed: true, user: { suspended: false } },
+  });
+  await notifyListedSittersOfRequest(summary);
+  await notifyAdminsOfOpenRequest({
+    ...summary,
+    when: summary.startTime,
+    parentName: account.name,
+    listedSitterCount,
+  });
+
+  revalidatePath("/parent");
+  redirect("/parent");
+}
+
+// Turn an open request into a booking for a specific sitter. Shared by the
+// sitter claiming it and an Admin assigning it. The sitter volunteered for the
+// time, so there is no separate approval step: the booking lands APPROVED with
+// the address released, awaiting the parent's payment.
+async function fulfilRequest(
+  requestId: string,
+  sitterProfileId: string,
+): Promise<string> {
+  const profile = await prisma.sitterProfile.findUniqueOrThrow({
+    where: { id: sitterProfileId },
+    include: { user: { select: { suspended: true } } },
+  });
+  if (!profile.isListed || profile.user.suspended) {
+    throw new Error("That sitter isn't currently bookable.");
+  }
+  const request = await prisma.bookingRequest.findUniqueOrThrow({
+    where: { id: requestId },
+  });
+  if (request.status !== "OPEN") {
+    throw new Error("That request is no longer open.");
+  }
+
+  const start = request.startTime;
+  const end = new Date(start.getTime() + request.durationHours * 3600 * 1000);
+  const conflict = await prisma.availabilitySlot.findFirst({
+    where: {
+      sitterProfileId: profile.id,
+      startTime: { lt: end },
+      endTime: { gt: start },
+    },
+  });
+  if (conflict) {
+    throw new Error("That window overlaps an existing block for this sitter.");
+  }
+
+  const settings = await getBusinessSettings();
+  const lastMinute = isLastMinute(start, settings.lastMinuteThresholdHours);
+  const price = computePrice(
+    effectiveRate(profile),
+    request.durationHours,
+    lastMinute,
+    settings,
+    start,
+    request.numberOfChildren,
+  );
+
+  // Atomically claim the request so two sitters can't pick up the same one.
+  const claimed = await prisma.bookingRequest.updateMany({
+    where: { id: requestId, status: "OPEN" },
+    data: {
+      status: "CLAIMED",
+      claimedById: profile.userId,
+      claimedAt: new Date(),
+    },
+  });
+  if (claimed.count === 0) {
+    throw new Error("Another sitter just picked that request up.");
+  }
+
+  // The claimed window becomes a BOOKED block so it shows in the hours grid and
+  // blocks any conflicting booking.
+  const now = new Date();
+  const slot = await prisma.availabilitySlot.create({
+    data: {
+      sitterProfileId: profile.id,
+      startTime: start,
+      endTime: end,
+      status: "BOOKED",
+      isLastMinuteEligible: lastMinute,
+    },
+  });
+  const booking = await prisma.booking.create({
+    data: {
+      parentId: request.parentId,
+      sitterId: profile.userId,
+      availabilitySlotId: slot.id,
+      dateTime: start,
+      durationHours: request.durationHours,
+      childrenAgeRange: request.childrenAgeRange,
+      numberOfChildren: request.numberOfChildren,
+      notes: request.notes,
+      listedRateSnapshot: price.listedRate,
+      baseAmount: price.base,
+      isLastMinute: lastMinute,
+      rushFeeAmount: price.rushFee,
+      extraChildFeeAmount: price.extraChildFee,
+      lateNightFeeAmount: price.lateNightFee,
+      overnightFeeAmount: price.overnightFee,
+      platformFeeAmount: price.platformFee,
+      totalAmount: price.total,
+      waiverVersion: request.waiverVersion,
+      waiverAcceptedAt: request.waiverAcceptedAt,
+      waiverAcceptedIp: request.waiverAcceptedIp,
+      waiverAcceptedUserAgent: request.waiverAcceptedUserAgent,
+      status: "APPROVED",
+      approvedAt: now,
+      addressReleasedAt: now,
+    },
+    include: notifyInclude,
+  });
+  await prisma.bookingRequest.update({
+    where: { id: requestId },
+    data: { bookingId: booking.id },
+  });
+  await copyRequestMedicalToBooking(requestId, booking.id, start);
+
+  await notify("APPROVED", ["PARENT", "SITTER"], booking, settings);
+  await notifyAdminsOfBooking({
+    id: booking.id,
+    bookingNumber: booking.bookingNumber,
+    parentName: booking.parent.name,
+    sitterName: booking.sitter.name,
+    when: booking.dateTime,
+    durationHours: booking.durationHours,
+    totalAmount: booking.totalAmount,
+    isLastMinute: booking.isLastMinute,
+  });
+  return booking.id;
+}
+
+export async function claimBookingRequest(requestId: string) {
+  const user = await requireRole("SITTER");
+  const profile = await prisma.sitterProfile.findUnique({
+    where: { userId: user.id },
+  });
+  if (!profile) throw new Error("You need to be vetted before claiming work.");
+  const bookingId = await fulfilRequest(requestId, profile.id);
+  revalidatePath("/sitter/requests");
+  revalidatePath("/sitter");
+  revalidatePath("/admin/requests");
+  redirect(`/bookings/${bookingId}`);
+}
+
+export async function adminAssignBookingRequest(fd: FormData) {
+  await requireRole("ADMIN");
+  const requestId = s(fd, "requestId");
+  const sitterProfileId = s(fd, "sitterProfileId");
+  if (!requestId || !sitterProfileId)
+    throw new Error("Pick a sitter to assign.");
+  await fulfilRequest(requestId, sitterProfileId);
+  revalidatePath("/admin/requests");
   revalidatePath("/admin");
 }
 
-export async function cancelBooking(bookingId: string) {
+// Withdraw an open request. The parent can withdraw their own; Admin can
+// withdraw any. Claimed requests are cancelled through their booking instead.
+export async function cancelBookingRequest(requestId: string) {
   const user = await requireUser();
+  const request = await prisma.bookingRequest.findUniqueOrThrow({
+    where: { id: requestId },
+  });
+  if (request.parentId !== user.id && user.role !== "ADMIN") {
+    throw new Error("Not your request");
+  }
+  await prisma.bookingRequest.updateMany({
+    where: { id: requestId, status: "OPEN" },
+    data: { status: "CANCELLED", cancelledAt: new Date() },
+  });
+  revalidatePath("/parent");
+  revalidatePath("/sitter/requests");
+  revalidatePath("/admin/requests");
+}
+
+// ---------- Sitter: approve / decline ----------
+
+// Sitter approves the request at the Admin-set rate (they never set a rate).
+// This releases the full service address and moves the booking to APPROVED so
+// the parent can pay into escrow.
+export async function approveBooking(bookingId: string) {
+  const user = await requireRole("SITTER");
   const booking = await prisma.booking.findUniqueOrThrow({
     where: { id: bookingId },
+    include: notifyInclude,
   });
-  const isParticipant =
-    booking.parentId === user.id || booking.sitterId === user.id;
-  if (!isParticipant && user.role !== "ADMIN") {
-    throw new Error("Not permitted");
+  if (booking.sitterId !== user.id) throw new Error("Not your booking");
+  if (booking.status !== "REQUESTED") {
+    throw new Error("Only a pending request can be approved.");
   }
-  if (["COMPLETED", "CANCELLED"].includes(booking.status)) return;
+  const now = new Date();
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: { status: "APPROVED", approvedAt: now, addressReleasedAt: now },
+  });
+  const settings = await getBusinessSettings();
+  await notify("APPROVED", ["PARENT", "SITTER"], booking, settings);
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/sitter");
+  revalidatePath("/admin");
+}
+
+// Sitter declines: booking → DECLINED and the slot reopens for other parents.
+export async function declineBooking(bookingId: string) {
+  const user = await requireRole("SITTER");
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: notifyInclude,
+  });
+  if (booking.sitterId !== user.id) throw new Error("Not your booking");
+  if (booking.status !== "REQUESTED") {
+    throw new Error("Only a pending request can be declined.");
+  }
   await prisma.$transaction([
     prisma.booking.update({
       where: { id: bookingId },
-      data: { status: "CANCELLED" },
+      data: { status: "DECLINED", declinedAt: new Date() },
     }),
     prisma.availabilitySlot.update({
       where: { id: booking.availabilitySlotId },
       data: { status: "OPEN" },
     }),
   ]);
+  const settings = await getBusinessSettings();
+  await notify("DECLINED", ["PARENT"], booking, settings);
   revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/sitter");
+  revalidatePath("/admin");
+}
+
+// ---------- Parent: payment (escrow) ----------
+
+export type PaymentFormState = { error?: string };
+
+// Shared pre-payment checks: the booking must be the parent's, approved, unpaid
+// and carrying an address; the waiver is accepted here if it is still
+// outstanding (an Admin-entered booking never collected it).
+async function preparePayment(
+  fd: FormData,
+): Promise<
+  | { ok: false; error: string }
+  | { ok: true; booking: Booking; waiver: Prisma.BookingUpdateInput }
+> {
+  const user = await requireRole("PARENT");
+  const bookingId = s(fd, "bookingId");
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+  });
+  if (booking.parentId !== user.id) throw new Error("Not your booking");
+  if (booking.status !== "APPROVED") {
+    return {
+      ok: false,
+      error: "The sitter has to approve the booking before payment.",
+    };
+  }
+  if (booking.paidAt) return { ok: false, error: "This booking is already paid." };
+
+  // An Admin-entered booking never went through the booking form, so this is
+  // the parent's first chance to give the address the sitter needs.
+  const address = await ensureServiceAddress(user.id, fd);
+  if (!address.ok) return { ok: false, error: address.error };
+
+  const waiver: Prisma.BookingUpdateInput = {};
+  if (!booking.waiverAcceptedAt) {
+    if (s(fd, "waiverAccepted") !== "on") {
+      return {
+        ok: false,
+        error: "You must accept the waiver and terms to pay.",
+      };
+    }
+    const acceptance = waiverAcceptanceContext();
+    waiver.waiverAcceptedAt = new Date();
+    waiver.waiverAcceptedIp = acceptance.ip;
+    waiver.waiverAcceptedUserAgent = acceptance.userAgent;
+  }
+  return { ok: true, booking, waiver };
+}
+
+// Card step 1: validate, record the waiver, and open a PaymentIntent whose
+// client secret the browser confirms with Stripe Elements. No card details ever
+// reach this server — the browser sends them straight to Stripe.
+export async function startCardPayment(
+  fd: FormData,
+): Promise<{ error?: string; clientSecret?: string }> {
+  if (!stripeEnabled || !stripe) {
+    return { error: "Card payments are not switched on yet." };
+  }
+  const prepared = await preparePayment(fd);
+  if (!prepared.ok) return { error: prepared.error };
+  const { booking, waiver } = prepared;
+
+  // Funds are captured to Ri'aya's balance and held there until completion,
+  // then transferred to the sitter's connected account minus Ri'aya's fee.
+  const intent = booking.stripePaymentIntentId
+    ? await stripe.paymentIntents.update(booking.stripePaymentIntentId, {
+        amount: booking.totalAmount * 100,
+      })
+    : await stripe.paymentIntents.create({
+        amount: booking.totalAmount * 100,
+        currency: "cad",
+        capture_method: "automatic",
+        automatic_payment_methods: { enabled: true },
+        metadata: { bookingId: booking.id },
+      });
+
+  await prisma.booking.update({
+    where: { id: booking.id },
+    data: { ...waiver, stripePaymentIntentId: intent.id },
+  });
+  return { clientSecret: intent.client_secret ?? undefined };
+}
+
+// Card step 2: the browser reports a confirmed card. The booking is only marked
+// paid after Stripe itself confirms the intent succeeded (the webhook does the
+// same, so a closed tab still lands the payment).
+export async function finalizeCardPayment(
+  bookingId: string,
+): Promise<{ error?: string }> {
+  const user = await requireRole("PARENT");
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+  });
+  if (booking.parentId !== user.id) throw new Error("Not your booking");
+  if (booking.paidAt) return {};
+  if (!booking.stripePaymentIntentId) return { error: "No payment started." };
+
+  const result = await markCardPaid(bookingId, booking.stripePaymentIntentId);
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/admin/bookings");
+  return result.paid ? {} : { error: result.error };
+}
+
+// Payment happens after the sitter approves, so a parent is never charged for a
+// booking the sitter might decline. This path settles an e-transfer intent (and,
+// where Stripe isn't configured, the mock card payment used in dev/test).
+export async function payBooking(
+  _prevState: PaymentFormState,
+  fd: FormData,
+): Promise<PaymentFormState> {
+  const method = s(fd, "method") === "ETRANSFER" ? "ETRANSFER" : "CARD";
+  const prepared = await preparePayment(fd);
+  if (!prepared.ok) return { error: prepared.error };
+  const { booking, waiver } = prepared;
+
+  if (method === "ETRANSFER") {
+    await prisma.booking.update({
+      where: { id: booking.id },
+      data: { ...waiver, paymentMethod: "ETRANSFER" },
+    });
+    revalidatePath(`/bookings/${booking.id}`);
+    revalidatePath("/admin/bookings");
+    return {};
+  }
+
+  if (stripeEnabled) {
+    return { error: "Enter your card details to pay by card." };
+  }
+
+  // Mock mode (no Stripe key): no money moves, the booking is simply marked
+  // paid so the rest of the lifecycle is exercisable in dev/test.
+  await prisma.booking.update({
+    where: { id: booking.id },
+    data: { ...waiver, paidAt: new Date(), paymentMethod: "CARD" },
+  });
+  revalidatePath(`/bookings/${booking.id}`);
+  return {};
+}
+
+// Admin records a payment that arrived outside the app (e-transfer or cash).
+// This is the only way an e-transfer booking becomes paid, so who confirmed it
+// is stored on the booking.
+export async function adminMarkBookingPaid(bookingId: string) {
+  const admin = await requireRole("ADMIN");
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+  });
+  if (booking.paidAt) throw new Error("Booking is already paid.");
+  if (booking.status !== "APPROVED") {
+    throw new Error("The sitter has to approve the booking before payment.");
+  }
+  if (!booking.waiverAcceptedAt) {
+    throw new Error(
+      "The parent has to accept the waiver before the booking can be paid.",
+    );
+  }
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      paidAt: new Date(),
+      paymentMethod: booking.paymentMethod ?? "ETRANSFER",
+      paidRecordedById: admin.id,
+    },
+  });
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/admin/bookings");
+  revalidatePath("/admin");
+}
+
+// ---------- Completion lifecycle ----------
+
+// Mark an approved+paid booking as underway (on/after the scheduled start).
+export async function startBooking(bookingId: string) {
+  const user = await requireUser();
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+  });
+  const isParticipant =
+    booking.parentId === user.id || booking.sitterId === user.id;
+  if (!isParticipant && user.role !== "ADMIN") throw new Error("Not permitted");
+  if (booking.status !== "APPROVED") {
+    throw new Error("Booking must be approved before it can start.");
+  }
+  if (!booking.paidAt)
+    throw new Error("Booking must be paid before it starts.");
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: { status: "IN_PROGRESS", startedAt: new Date() },
+  });
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/admin");
+}
+
+// Confirm completion (releases payout). The confirmer is configurable: with
+// completionConfirmedBy = PARENT the parent or an Admin can confirm; with ADMIN
+// only an Admin can. Reviews unlock once COMPLETED.
+export async function completeBooking(bookingId: string) {
+  const user = await requireUser();
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: { ...notifyInclude, sitter: { include: { sitterProfile: true } } },
+  });
+  const settings = await getBusinessSettings();
+
+  const isAdmin = user.role === "ADMIN";
+  const parentMayConfirm =
+    settings.completionConfirmedBy === "PARENT" && booking.parentId === user.id;
+  if (!isAdmin && !parentMayConfirm) {
+    throw new Error("Not permitted to confirm completion.");
+  }
+  if (booking.status !== "IN_PROGRESS") {
+    throw new Error("Booking must be in progress before completion.");
+  }
+  if (!booking.paidAt)
+    throw new Error("Booking must be paid before completion.");
+
+  // Completion releases the sitter's money. The transfer is attempted here but
+  // is never allowed to fail the completion — anything that doesn't move shows
+  // up as outstanding on /admin/payouts.
+  const attempt = await transferToSitter(booking, booking.sitter.sitterProfile);
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      status: "COMPLETED",
+      completedAt: new Date(),
+      payoutReleasedAt: new Date(),
+      payoutAmount: payoutAmount(booking),
+      payoutStatus: attempt.status,
+      payoutMethod: attempt.status === "PAID" ? "STRIPE" : null,
+      payoutTransferId: attempt.transferId,
+      payoutError: attempt.error,
+      payoutPaidAt: attempt.status === "PAID" ? new Date() : null,
+    },
+  });
+  await notify("COMPLETED", ["PARENT", "SITTER"], booking, settings);
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/admin");
+}
+
+// Form wrapper so the canceller can say why (stored on the booking, shown to
+// the other party and to Admin).
+export async function cancelBookingWithReason(fd: FormData) {
+  const bookingId = String(fd.get("bookingId") ?? "");
+  const reason = String(fd.get("reason") ?? "");
+  await cancelBooking(bookingId, reason);
+}
+
+export async function cancelBooking(bookingId: string, reason?: string) {
+  const user = await requireUser();
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: notifyInclude,
+  });
+  const isParticipant =
+    booking.parentId === user.id || booking.sitterId === user.id;
+  if (!isParticipant && user.role !== "ADMIN") {
+    throw new Error("Not permitted");
+  }
+  if (["COMPLETED", "CANCELLED", "DECLINED"].includes(booking.status)) return;
+
+  const settings = await getBusinessSettings();
+  // Tiered refund: who cancelled, and (for a parent) how much notice they gave.
+  // A sitter or Admin cancellation always makes the parent whole.
+  const actorRole =
+    user.role === "ADMIN" && !isParticipant
+      ? "ADMIN"
+      : booking.sitterId === user.id
+        ? "SITTER"
+        : booking.parentId === user.id
+          ? "PARENT"
+          : "ADMIN";
+  const refund = computeRefund({
+    actorRole,
+    paidAmount: booking.paidAt ? booking.totalAmount : 0,
+    start: booking.dateTime,
+    settings,
+  });
+
+  // Refund the real charge where one exists; the mock-payment path just records
+  // the outcome. A processor failure must not leave the booking half-cancelled.
+  let refundProcessorId: string | null = null;
+  let refundProcessorStatus: string | null = null;
+  if (refund.refundAmount > 0) {
+    if (stripeEnabled && stripe && booking.stripePaymentIntentId) {
+      const created = await stripe.refunds.create({
+        payment_intent: booking.stripePaymentIntentId,
+        amount: refund.refundAmount * 100,
+      });
+      refundProcessorId = created.id;
+      refundProcessorStatus = created.status ?? null;
+    } else {
+      refundProcessorStatus = "mock";
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancellationChargeAmount: refund.forfeitAmount,
+        refundAmount: refund.refundAmount,
+        refundPercent: booking.paidAt ? refund.refundPercent : null,
+        refundTier: refund.tier,
+        cancelledByUserId: user.id,
+        cancelledByRole: actorRole,
+        cancellationReason: reason?.trim() || null,
+        refundProcessorId,
+        refundProcessorStatus,
+      },
+    }),
+    prisma.availabilitySlot.update({
+      where: { id: booking.availabilitySlotId },
+      data: { status: "OPEN" },
+    }),
+  ]);
+  await notify("CANCELLED", ["PARENT", "SITTER"], booking, settings);
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath("/admin");
+}
+
+// ---------- Reviews (two-way; unlocked only after completion) ----------
+
+export async function submitReview(fd: FormData) {
+  const user = await requireUser();
+  const parsed = reviewSchema.safeParse({
+    bookingId: s(fd, "bookingId"),
+    rating: s(fd, "rating"),
+    comment: s(fd, "comment"),
+  });
+  if (!parsed.success) throw new Error("Invalid review");
+
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: parsed.data.bookingId },
+  });
+  const isParent = booking.parentId === user.id;
+  const isSitter = booking.sitterId === user.id;
+  if (!isParent && !isSitter) throw new Error("Not your booking");
+  if (booking.status !== "COMPLETED") {
+    throw new Error("Reviews unlock only after a booking is completed.");
+  }
+
+  const subjectId = isParent ? booking.sitterId : booking.parentId;
+  await prisma.review.upsert({
+    where: { bookingId_authorId: { bookingId: booking.id, authorId: user.id } },
+    create: {
+      bookingId: booking.id,
+      authorId: user.id,
+      subjectId,
+      rating: parsed.data.rating,
+      comment: parsed.data.comment || null,
+    },
+    update: {
+      rating: parsed.data.rating,
+      comment: parsed.data.comment || null,
+    },
+  });
+  revalidatePath(`/bookings/${booking.id}`);
 }
 
 // ---------- Reports ----------
@@ -453,8 +1621,13 @@ export async function connectStripe() {
 
   if (stripeEnabled && stripe) {
     let accountId = profile.stripeAccountId;
-    if (!accountId) {
-      const account = await stripe.accounts.create({ type: "express" });
+    if (!accountId || accountId.startsWith("mock_acct_")) {
+      const account = await stripe.accounts.create({
+        type: "express",
+        country: "CA",
+        email: user.email ?? undefined,
+        capabilities: { transfers: { requested: true } },
+      });
       accountId = account.id;
       await prisma.sitterProfile.update({
         where: { id: profile.id },
@@ -465,7 +1638,7 @@ export async function connectStripe() {
     const link = await stripe.accountLinks.create({
       account: accountId,
       refresh_url: `${base}/sitter`,
-      return_url: `${base}/sitter`,
+      return_url: `${base}/sitter?payouts=return`,
       type: "account_onboarding",
     });
     redirect(link.url);
@@ -475,7 +1648,92 @@ export async function connectStripe() {
   // completion/payout flow is exercisable end to end in dev/test.
   await prisma.sitterProfile.update({
     where: { id: profile.id },
-    data: { stripeAccountId: profile.stripeAccountId ?? `mock_acct_${profile.id}` },
+    data: {
+      stripeAccountId: profile.stripeAccountId ?? `mock_acct_${profile.id}`,
+    },
   });
   revalidatePath("/sitter");
+}
+
+// Re-read the connected account from Stripe. Onboarding often finishes
+// asynchronously (Stripe verifying identity or bank details), so "I'm done"
+// from the sitter isn't proof they can be paid.
+export async function refreshPayoutStatus() {
+  const user = await requireRole("SITTER");
+  const profile = await prisma.sitterProfile.findUniqueOrThrow({
+    where: { userId: user.id },
+  });
+  if (profile.stripeAccountId) {
+    await syncConnectAccount(profile.id, profile.stripeAccountId);
+  }
+  revalidatePath("/sitter");
+}
+
+// ---------- Admin: sitter payouts ----------
+
+// Retry (or make a first) Stripe transfer for a completed booking.
+export async function adminPayoutBooking(fd: FormData) {
+  await requireRole("ADMIN");
+  const bookingId = s(fd, "bookingId");
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: { sitter: { include: { sitterProfile: true } } },
+  });
+  if (booking.status !== "COMPLETED") {
+    throw new Error("Only a completed booking can be paid out.");
+  }
+  if (booking.payoutPaidAt) throw new Error("This payout is already settled.");
+
+  const profile = booking.sitter.sitterProfile;
+  if (profile?.stripeAccountId) {
+    // Refresh first: a sitter who has since finished onboarding should not stay
+    // blocked on a stale flag.
+    await syncConnectAccount(profile.id, profile.stripeAccountId);
+  }
+  const fresh = profile
+    ? await prisma.sitterProfile.findUnique({ where: { id: profile.id } })
+    : null;
+
+  const attempt = await transferToSitter(booking, fresh);
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      payoutAmount: payoutAmount(booking),
+      payoutStatus: attempt.status,
+      payoutMethod: attempt.status === "PAID" ? "STRIPE" : null,
+      payoutTransferId: attempt.transferId,
+      payoutError: attempt.error,
+      payoutPaidAt: attempt.status === "PAID" ? new Date() : null,
+    },
+  });
+  revalidatePath("/admin/payouts");
+}
+
+// Record a payout Ri'aya settled outside Stripe (e-transfer or cash), so the
+// dashboard stops showing it as owed and there is a record of who paid it.
+export async function adminMarkPayoutPaid(fd: FormData) {
+  const admin = await requireRole("ADMIN");
+  const bookingId = s(fd, "bookingId");
+  const note = s(fd, "note").slice(0, 200);
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+  });
+  if (booking.status !== "COMPLETED") {
+    throw new Error("Only a completed booking can be paid out.");
+  }
+  if (booking.payoutPaidAt) throw new Error("This payout is already settled.");
+
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      payoutAmount: payoutAmount(booking),
+      payoutStatus: "PAID",
+      payoutMethod: "MANUAL",
+      payoutPaidAt: new Date(),
+      payoutRecordedById: admin.id,
+      payoutNote: note || null,
+      payoutError: null,
+    },
+  });
+  revalidatePath("/admin/payouts");
 }
