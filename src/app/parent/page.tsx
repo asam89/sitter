@@ -118,6 +118,19 @@ export default async function ParentDashboard() {
 
       <Card className="flex flex-wrap items-center justify-between gap-4">
         <div>
+          <h2 className="font-semibold text-brand-ink">Sitter profiles</h2>
+          <p className="text-sm text-brand-teal-light">
+            Get to know our sitters: photo, bio, rate, checks and parent
+            reviews.
+          </p>
+        </div>
+        <ButtonLink href="/parent/sitters" variant="secondary">
+          View sitter profiles
+        </ButtonLink>
+      </Card>
+
+      <Card className="flex flex-wrap items-center justify-between gap-4">
+        <div>
           <h2 className="font-semibold text-brand-ink">
             Need a time nobody has posted?
           </h2>

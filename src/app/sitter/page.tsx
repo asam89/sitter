@@ -14,6 +14,7 @@ import {
 import { sittersWithCurrentVsc } from "@/lib/screening";
 import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
 import { PublicProfileCard } from "./PublicProfileCard";
+import { pickAbout } from "@/lib/sitter-about";
 import { dt, money, moneyHr } from "@/lib/format";
 import { unreadTeamMessageCount } from "@/lib/team-messages";
 import { openShiftCoverCount } from "@/lib/shift-covers";
@@ -230,6 +231,7 @@ export default async function SitterDashboard() {
         <PublicProfileCard
           profileId={profile.id}
           bio={profile.bio ?? ""}
+          about={pickAbout(profile)}
           publicOptIn={profile.publicOptIn}
           hasPhoto={Boolean(profile.photoPath)}
           showcased={profile.showcased}

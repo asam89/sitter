@@ -3,6 +3,8 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, buttonClass } from "@/components/ui";
+import { SitterAboutFields } from "@/components/SitterAboutFields";
+import type { SitterAbout } from "@/lib/sitter-about";
 import {
   updateSitterPublicProfile,
   uploadSitterPhoto,
@@ -15,12 +17,14 @@ const inputCls =
 export function PublicProfileCard({
   profileId,
   bio,
+  about,
   publicOptIn,
   hasPhoto,
   showcased,
 }: {
   profileId: string;
   bio: string;
+  about: SitterAbout;
   publicOptIn: boolean;
   hasPhoto: boolean;
   showcased: boolean;
@@ -56,13 +60,13 @@ export function PublicProfileCard({
         )}
       </div>
       <p className="mt-1 text-sm text-slate-600">
-        Add a friendly photo and short bio. If you opt in, our team may feature
-        you on the public{" "}
+        Add a friendly photo, a short bio and a few details about yourself. If
+        you opt in, our team may feature you on the public{" "}
         <a href="/team" className="font-medium text-brand-coral">
           Meet our team
         </a>{" "}
-        page (after a quick review). While you&apos;re listed, your photo, bio
-        and rate also appear on the profile link we send to families.
+        page (after a quick review). While you&apos;re listed, your photo, bio,
+        details and rate also appear on the profile link we send to families.
       </p>
 
       {/* Photo */}
@@ -157,6 +161,7 @@ export function PublicProfileCard({
             className={inputCls}
           />
         </label>
+        <SitterAboutFields about={about} />
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"

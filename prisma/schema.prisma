@@ -440,6 +440,14 @@ model SitterProfile {
   userId          String   @unique
   bio             String?
   city            String?
+  // "About me" details shown on the parent-facing profile. Editable by the
+  // sitter and by Admin. All optional.
+  age             Int?
+  education       String?
+  experience      String?
+  agesCaredFor    String?
+  languages       String?
+  activities      String?
   listedPayRate   Int // Admin-set hourly rate (whole CAD) — distinct from targetPayRate
   // Sitter-set hourly rate. Sitters price their own time; listedPayRate is the
   // Admin-set fallback used until a sitter sets one. See effectiveRate().

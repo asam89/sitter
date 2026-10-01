@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
-import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  EmptyState,
+  PageTitle,
+} from "@/components/ui";
 import { d } from "@/lib/format";
 import { sitterStage } from "@/lib/sitter-stage";
 import { sittersWithCurrentVsc } from "@/lib/screening";
@@ -25,7 +31,10 @@ export default async function SitterRosterPage() {
       _count: { select: { sitterBookings: true } },
     },
   });
-  const vsc = await sittersWithCurrentVsc(sitters.map((s) => s.id));
+  const [vsc, pendingScreenings] = await Promise.all([
+    sittersWithCurrentVsc(sitters.map((s) => s.id)),
+    prisma.sitterScreening.count({ where: { status: "PENDING" } }),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -33,6 +42,15 @@ export default async function SitterRosterPage() {
         title="Sitter profiles"
         subtitle="Every sitter account, from first sign-up to listed. Open one to see their application, documents, bookings and payouts."
       />
+      <div className="flex flex-wrap gap-2">
+        <ButtonLink href="/admin/screening" variant="secondary">
+          Background checks
+          {pendingScreenings > 0 && ` (${pendingScreenings} to verify)`}
+        </ButtonLink>
+        <ButtonLink href="/parent/sitters" variant="secondary">
+          What parents see
+        </ButtonLink>
+      </div>
       {sitters.length === 0 ? (
         <EmptyState>No sitter accounts yet.</EmptyState>
       ) : (
