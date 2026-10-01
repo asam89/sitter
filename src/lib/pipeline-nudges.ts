@@ -17,7 +17,7 @@
 import { prisma } from "@/lib/prisma";
 import { getEmailProvider } from "@/lib/notifications";
 import { adminAlertRecipients } from "@/lib/admin-notifications";
-import { d } from "@/lib/format";
+import { bookingRef, d, dt } from "@/lib/format";
 import type { PipelineNudgeKind } from "@prisma/client";
 
 export const NUDGE_COOLDOWN_DAYS = 7;
@@ -247,6 +247,38 @@ export async function sweepPipeline(now = new Date()): Promise<PipelineSweep> {
     sections.push(
       `SITTER ACCOUNTS WITH NO APPLICATION (${unfinished.length})\n` +
         unfinished.map((u) => `• ${label(u)}`).join("\n"),
+    );
+  }
+
+  const openCovers = await prisma.shiftCover.findMany({
+    where: {
+      status: "OPEN",
+      booking: {
+        status: { in: ["REQUESTED", "APPROVED"] },
+        dateTime: { gt: now },
+      },
+    },
+    orderBy: { booking: { dateTime: "asc" } },
+    select: {
+      booking: {
+        select: {
+          bookingNumber: true,
+          dateTime: true,
+          sitter: { select: { name: true, email: true } },
+        },
+      },
+    },
+  });
+  if (openCovers.length > 0) {
+    sections.push(
+      `SHIFTS STILL NEEDING COVER (${openCovers.length})\n` +
+        openCovers
+          .map(
+            (c) =>
+              `• ${bookingRef(c.booking.bookingNumber)} on ${dt(c.booking.dateTime)}, ` +
+              `dropped by ${label(c.booking.sitter)}`,
+          )
+          .join("\n"),
     );
   }
 

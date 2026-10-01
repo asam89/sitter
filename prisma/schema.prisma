@@ -193,6 +193,9 @@ model User {
   teamMessagesSent     TeamMessage[]            @relation("TeamMessageAuthor")
   teamMessagesReceived TeamMessage[]            @relation("TeamMessageRecipient")
   teamMessageReads     TeamMessageRead[]
+  shiftCoversFrom      ShiftCover[]             @relation("ShiftCoverFrom")
+  shiftCoversFilled    ShiftCover[]             @relation("ShiftCoverFilledBy")
+  shiftCoversPosted    ShiftCover[]             @relation("ShiftCoverPostedBy")
 }
 
 // A note from the Ri'aya team to sitters, read in the portal (/sitter/inbox).
@@ -585,6 +588,7 @@ model Booking {
   childMedical     ChildMedicalRecord[]
   reviews          Review[]
   openRequest      BookingRequest?
+  shiftCovers      ShiftCover[]
 
   @@index([status])
   @@index([parentId])
@@ -913,4 +917,36 @@ model ErrorEvent {
 enum ErrorEventKind {
   SERVER_ERROR
   USER_REPORT
+}
+
+enum ShiftCoverStatus {
+  OPEN // offered to the vetted pool, nobody has taken it yet
+  FILLED // another sitter took it and is now the booking's sitter
+  WITHDRAWN // Admin pulled the offer
+}
+
+// An Admin offering a booking's shift to every other vetted sitter because the
+// assigned sitter can't make it. The first sitter to take it becomes the
+// booking's sitter; the parent's pricing, waiver and payment stay as they are.
+model ShiftCover {
+  id             String           @id @default(cuid())
+  bookingId      String
+  fromSitterId   String
+  postedById     String
+  note           String?
+  status         ShiftCoverStatus @default(OPEN)
+  filledById     String?
+  filledAt       DateTime?
+  withdrawnAt    DateTime?
+  smsSentCount   Int              @default(0)
+  emailSentCount Int              @default(0)
+  createdAt      DateTime         @default(now())
+
+  booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  fromSitter User    @relation("ShiftCoverFrom", fields: [fromSitterId], references: [id])
+  postedBy   User    @relation("ShiftCoverPostedBy", fields: [postedById], references: [id])
+  filledBy   User?   @relation("ShiftCoverFilledBy", fields: [filledById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([bookingId])
 }

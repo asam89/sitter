@@ -29,7 +29,8 @@ type AdminAlert =
   | "BOOKING"
   | "REQUEST"
   | "ERROR"
-  | "INBOUND";
+  | "INBOUND"
+  | "COVER";
 
 function appUrl(path: string): string {
   const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(
@@ -348,5 +349,24 @@ export async function notifyAdminsOfBooking(b: {
       `The babysitter has been notified and needs to approve it. ` +
       `Details: ${appUrl(`/bookings/${b.id}`)}\n` +
       `All bookings: ${appUrl("/admin/bookings")}`,
+  );
+}
+
+// A sitter from the pool took a shift another sitter couldn't make.
+export async function notifyAdminsOfShiftCovered(c: {
+  bookingId: string;
+  bookingNumber: number;
+  when: Date;
+  durationHours: number;
+  fromSitterName: string;
+  newSitterName: string;
+}): Promise<void> {
+  await alertAdmins(
+    "COVER",
+    `Shift covered: ${bookingRef(c.bookingNumber)} now with ${c.newSitterName}`,
+    `${c.newSitterName} took ${bookingRef(c.bookingNumber)} on ${dt(c.when)} ` +
+      `(${c.durationHours}h) from the shift pool, replacing ${c.fromSitterName}. ` +
+      `The parent and both sitters have been emailed.\n\n` +
+      `Booking: ${appUrl(`/bookings/${c.bookingId}`)}`,
   );
 }
