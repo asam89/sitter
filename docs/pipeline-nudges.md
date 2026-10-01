@@ -31,8 +31,13 @@ week; the host clock is UTC, so Sunday 22:00 UTC is 6pm Toronto in summer
 0 22 * * 0 . /home/ubuntu/sitbaby/.env.prod; curl -fsS -X POST -H "x-maintenance-token: $MAINTENANCE_TOKEN" http://127.0.0.1:3003/api/maintenance/weekly-schedule-reminders >/dev/null
 ```
 
-Every listed, non-suspended sitter gets "Please check your Ri'aya schedule for
-the week" with the number of open hours they have in the next 7 days and a
-link to `/sitter/availability`. Logged as `SITTER_WEEKLY_SCHEDULE`; a sitter is
-skipped if they got this reminder in the last 6 days or the empty-calendar
-nudge in the last 24 hours.
+Every vetted (has a sitter profile), non-suspended sitter, listed or not, gets
+"Please set your schedule for this week" by email with the number of open hours
+they have in the next 7 days and a link to `/sitter/availability`, plus a short
+text if they have a phone and haven't replied STOP. Logged as
+`SITTER_WEEKLY_SCHEDULE`; a sitter is skipped if they got this reminder in the
+last 6 days or the empty-calendar nudge in the last 24 hours.
+
+Admins can also send it immediately with "Send schedule reminder now" on
+`/admin/messages`; that ignores the throttles and is logged the same way, so the
+Sunday run skips anyone reminded in the previous 6 days.
