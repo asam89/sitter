@@ -230,6 +230,7 @@ enum PipelineNudgeKind {
   SITTER_SCHEDULE // listed sitter with an empty calendar
   APPLICANT_NEXT_STEP // application waiting on an interview
   APPLICATION_UNFINISHED // sitter account that never submitted an application
+  SITTER_WEEKLY_SCHEDULE // weekly "review next week's hours" reminder to listed sitters
 }
 
 // One row per automated nudge email so the daily sweep can throttle: a person
