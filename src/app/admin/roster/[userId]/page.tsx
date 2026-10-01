@@ -14,6 +14,8 @@ import {
   sitterShareUrl,
 } from "@/lib/public-sitter";
 import { CopyLink } from "./CopyLink";
+import { AboutForm } from "./AboutForm";
+import { pickAbout } from "@/lib/sitter-about";
 
 export const dynamic = "force-dynamic";
 
@@ -297,11 +299,18 @@ export default async function AdminSitterProfilePage({
                 {openHours}h open · {bookedHours}h booked
               </Field>
             </dl>
-            {sp.bio && (
-              <dl className="mt-3">
-                <Field label="Public bio">{sp.bio}</Field>
-              </dl>
-            )}
+            <details className="mt-4 rounded-lg border border-slate-200 p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Bio and details parents see (age, education, experience…)
+              </summary>
+              <div className="mt-3">
+                <AboutForm
+                  profileId={sp.id}
+                  bio={sp.bio ?? ""}
+                  about={pickAbout(sp)}
+                />
+              </div>
+            </details>
             <Link
               href={`/admin/sitters/${sp.id}`}
               className={`${link} mt-3 inline-block`}

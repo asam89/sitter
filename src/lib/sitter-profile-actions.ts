@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { getPublicStorage } from "@/lib/public-storage";
+import { parseAbout } from "@/lib/sitter-about";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -39,12 +40,40 @@ export async function updateSitterPublicProfile(
     return { ok: false, error: `Bio is too long (max ${MAX_BIO_LEN} characters).` };
   }
   const publicOptIn = fd.get("publicOptIn") === "on" || fd.get("publicOptIn") === "true";
+  const about = parseAbout(fd);
+  if (!about.ok) return { ok: false, error: about.error };
 
   await prisma.sitterProfile.update({
     where: { id: profile.id },
-    data: { bio: bioRaw || null, publicOptIn },
+    data: { bio: bioRaw || null, publicOptIn, ...about.data },
   });
   revalidatePath("/sitter");
+  revalidatePath("/team");
+  revalidatePath(`/sitters/${profile.id}`);
+  return { ok: true };
+}
+
+// Admin edits a sitter's parent-facing bio and "About me" details, e.g. from
+// interview notes.
+export async function adminUpdateSitterAbout(
+  sitterProfileId: string,
+  fd: FormData,
+): Promise<ActionResult> {
+  await requireRole("ADMIN");
+  const bioRaw = s(fd, "bio").trim();
+  if (bioRaw.length > MAX_BIO_LEN) {
+    return { ok: false, error: `Bio is too long (max ${MAX_BIO_LEN} characters).` };
+  }
+  const about = parseAbout(fd);
+  if (!about.ok) return { ok: false, error: about.error };
+  const sp = await prisma.sitterProfile.update({
+    where: { id: sitterProfileId },
+    data: { bio: bioRaw || null, ...about.data },
+    select: { userId: true },
+  });
+  revalidatePath(`/admin/roster/${sp.userId}`);
+  revalidatePath(`/sitters/${sitterProfileId}`);
+  revalidatePath("/parent/sitters");
   revalidatePath("/team");
   return { ok: true };
 }

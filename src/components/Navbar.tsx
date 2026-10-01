@@ -41,6 +41,14 @@ export async function Navbar() {
           </Link>
           {session?.user ? (
             <>
+              {role === "PARENT" && (
+                <Link
+                  href="/parent/sitters"
+                  className="font-medium text-brand-teal hover:text-brand-coral"
+                >
+                  Sitter profiles
+                </Link>
+              )}
               <Link
                 href={role ? ROLE_HOME[role] : "/"}
                 className="font-medium text-brand-teal hover:text-brand-coral"

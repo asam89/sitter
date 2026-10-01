@@ -10,6 +10,7 @@ import { getBusinessSettings } from "@/lib/settings";
 import { supportEmail } from "@/lib/booking-reminders";
 import { firstName, isShareable, sitterSharePath } from "@/lib/public-sitter";
 import { OG_IMAGE_PATH, SITE_NAME } from "@/lib/site";
+import { ABOUT_TEXT_FIELDS, hasAbout } from "@/lib/sitter-about";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,12 @@ const loadSitter = cache(async (id: string) => {
       bio: true,
       city: true,
       photoPath: true,
+      age: true,
+      education: true,
+      experience: true,
+      agesCaredFor: true,
+      languages: true,
+      activities: true,
       isListed: true,
       listedPayRate: true,
       baseRate: true,
@@ -171,10 +178,36 @@ export default async function SitterPublicProfile({
         </div>
       </Card>
 
-      {sp.bio && (
+      {(sp.bio || hasAbout(sp)) && (
         <Card>
           <h2 className="mb-2 font-semibold">About {first}</h2>
-          <p className="whitespace-pre-line text-sm text-slate-700">{sp.bio}</p>
+          {sp.bio && (
+            <p className="whitespace-pre-line text-sm text-slate-700">
+              {sp.bio}
+            </p>
+          )}
+          {hasAbout(sp) && (
+            <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+              {sp.age !== null && (
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">
+                    Age
+                  </dt>
+                  <dd className="text-sm text-slate-700">{sp.age}</dd>
+                </div>
+              )}
+              {ABOUT_TEXT_FIELDS.filter((f) => sp[f.key]).map((f) => (
+                <div key={f.key} className={f.multiline ? "sm:col-span-2" : ""}>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">
+                    {f.label}
+                  </dt>
+                  <dd className="whitespace-pre-line text-sm text-slate-700">
+                    {sp[f.key]}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </Card>
       )}
 

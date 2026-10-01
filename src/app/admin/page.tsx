@@ -135,9 +135,6 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/requests" variant="secondary">
             Requests ({openRequests})
           </ButtonLink>
-          <ButtonLink href="/admin/roster" variant="secondary">
-            Sitter profiles
-          </ButtonLink>
           <ButtonLink href="/admin/applications" variant="secondary">
             Applications ({pendingApps})
           </ButtonLink>
@@ -162,9 +159,9 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/payouts" variant="secondary">
             Sitter payouts
           </ButtonLink>
-          <ButtonLink href="/admin/screening" variant="secondary">
-            Background checks
-            {pendingScreenings > 0 && ` (${pendingScreenings})`}
+          <ButtonLink href="/admin/roster" variant="secondary">
+            Sitter profiles
+            {pendingScreenings > 0 && ` (${pendingScreenings} to verify)`}
           </ButtonLink>
           <ButtonLink href="/admin/errors" variant="secondary">
             Failures &amp; reports
