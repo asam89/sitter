@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/session";
 import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
 import { bookingRef, d, dt, money, moneyHr } from "@/lib/format";
 import { effectiveRate, sitterPayout } from "@/lib/pricing";
-import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
+import { APPLICATION_STATUS_COLOR, bookingStage } from "@/lib/status";
 import { CHECK_TYPE_LABEL, screeningState } from "@/lib/screening";
 import { sitterStage } from "@/lib/sitter-stage";
 import {
@@ -87,6 +87,8 @@ export default async function AdminSitterProfilePage({
           payoutStatus: true,
           payoutAmount: true,
           payoutPaidAt: true,
+          paidAt: true,
+          waiverAcceptedAt: true,
           parent: { select: { name: true } },
         },
       },
@@ -450,8 +452,8 @@ export default async function AdminSitterProfilePage({
                         : "owed"}
                     </span>
                   )}
-                  <Badge color={BOOKING_STATUS_COLOR[b.status]}>
-                    {b.status}
+                  <Badge color={bookingStage(b).color}>
+                    {bookingStage(b).label}
                   </Badge>
                 </div>
               </li>

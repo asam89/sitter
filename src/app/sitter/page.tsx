@@ -12,7 +12,11 @@ import {
   buttonClass,
 } from "@/components/ui";
 import { sittersWithCurrentVsc } from "@/lib/screening";
-import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
+import {
+  APPLICATION_STATUS_COLOR,
+  BOOKING_STATUS_COLOR,
+  bookingStage,
+} from "@/lib/status";
 import { PublicProfileCard } from "./PublicProfileCard";
 import { pickAbout } from "@/lib/sitter-about";
 import { dt, money, moneyHr } from "@/lib/format";
@@ -270,6 +274,8 @@ type SitterBooking = {
   rushFeeAmount: number;
   platformFeeAmount: number;
   totalAmount: number;
+  paidAt: Date | null;
+  waiverAcceptedAt: Date | null;
   status: keyof typeof BOOKING_STATUS_COLOR;
   parent: { name: string };
 };
@@ -318,8 +324,8 @@ function BookingSection({
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                  <Badge color={BOOKING_STATUS_COLOR[b.status]}>
-                    {b.status}
+                  <Badge color={bookingStage(b).color}>
+                    {bookingStage(b).label}
                   </Badge>
                   <Link
                     href={`/bookings/${b.id}`}

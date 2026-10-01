@@ -19,22 +19,22 @@ import {
   type NotificationMessage,
 } from "@/lib/notifications";
 import { dt, money } from "@/lib/format";
+import { sitterPayout } from "@/lib/pricing";
 
-type Channel = "EMAIL" | "SMS" | "WHATSAPP";
+export type Channel = "EMAIL" | "SMS" | "WHATSAPP";
 
 // Notifications are read outside the app (inbox, texts), so booking links have
 // to be absolute.
 export function appUrl(path: string): string {
-  const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(/\/$/, "");
+  const base = (process.env.NEXTAUTH_URL || "https://riaya.ca").replace(
+    /\/$/,
+    "",
+  );
   return `${base}${path}`;
 }
 
 export type BookingEvent =
-  | "REQUESTED"
-  | "APPROVED"
-  | "DECLINED"
-  | "CANCELLED"
-  | "COMPLETED";
+  "REQUESTED" | "APPROVED" | "DECLINED" | "CANCELLED" | "COMPLETED";
 
 export type Recipient = {
   userId: string;
@@ -110,10 +110,11 @@ function buildMessage(
     case "COMPLETED":
       return ctx.audience === "SITTER"
         ? {
-            subject: `Booking completed — payout released`,
+            subject: `Booking completed`,
             body:
-              `The ${when} booking is complete. ${money(ctx.sitterEarns)} has ` +
-              `been released to you. You can now leave a review: ${link}`,
+              `The ${when} booking is complete. We'll send your ` +
+              `${money(ctx.sitterEarns)} by e-Transfer. You can now leave a ` +
+              `review of the family: ${link}`,
           }
         : {
             subject: `Booking completed`,
@@ -128,7 +129,7 @@ function buildMessage(
 // parent to the newsletter is appropriate. It links to the sign-up page, so
 // receiving it never subscribes anyone, and parents who already opted in or
 // deliberately unsubscribed aren't asked.
-async function newsletterInvite(userId: string): Promise<string> {
+export async function newsletterInvite(userId: string): Promise<string> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { newsletterOptIn: true, newsletterOptOutAt: true },
@@ -183,16 +184,22 @@ export async function deliverBookingMessage(opts: {
   recipient: Recipient;
   message: NotificationMessage;
   emailSuffix?: string;
+  // Overrides the business-wide channel toggles for this message.
+  channels?: Channel[];
+  smsBody?: string;
 }): Promise<void> {
-  for (const channel of enabledChannels(opts.settings)) {
-    const to = channel === "EMAIL" ? opts.recipient.email : opts.recipient.phone;
-    const result = await dispatchOne(
-      channel,
-      to,
-      channel === "EMAIL" && opts.emailSuffix
-        ? { ...opts.message, body: `${opts.message.body}${opts.emailSuffix}` }
-        : opts.message,
-    );
+  for (const channel of opts.channels ?? enabledChannels(opts.settings)) {
+    const to =
+      channel === "EMAIL" ? opts.recipient.email : opts.recipient.phone;
+    const msg =
+      channel === "EMAIL"
+        ? opts.emailSuffix
+          ? { ...opts.message, body: `${opts.message.body}${opts.emailSuffix}` }
+          : opts.message
+        : opts.smsBody
+          ? { ...opts.message, body: opts.smsBody }
+          : opts.message;
+    const result = await dispatchOne(channel, to, msg);
     try {
       await prisma.notification.create({
         data: {
@@ -250,4 +257,61 @@ export async function notifyBookingEvent(
     message: msg,
     emailSuffix: invite,
   });
+}
+
+// A booking loaded with the fields needed to notify both parties.
+export type BookingForNotify = {
+  id: string;
+  dateTime: Date;
+  durationHours: number;
+  baseAmount: number;
+  rushFeeAmount: number;
+  platformFeeAmount: number;
+  totalAmount: number;
+  parentId: string;
+  sitterId: string;
+  parent: { name: string; email: string; phone: string | null };
+  sitter: { name: string; email: string; phone: string | null };
+  availabilitySlot: { sitterProfile: { city: string | null } };
+};
+
+export const bookingNotifyInclude = {
+  parent: { select: { name: true, email: true, phone: true } },
+  sitter: { select: { name: true, email: true, phone: true } },
+  availabilitySlot: { select: { sitterProfile: { select: { city: true } } } },
+} as const;
+
+// Fan a lifecycle event out to the sitter and/or parent across enabled channels.
+export async function notifyBookingParties(
+  event: BookingEvent,
+  audiences: Array<"SITTER" | "PARENT">,
+  booking: BookingForNotify,
+  settings: BusinessSettings,
+) {
+  const base = {
+    bookingId: booking.id,
+    settings,
+    parentName: booking.parent.name,
+    sitterName: booking.sitter.name,
+    when: booking.dateTime,
+    durationHours: booking.durationHours,
+    city: booking.availabilitySlot.sitterProfile.city,
+    sitterEarns: sitterPayout(booking),
+    total: booking.totalAmount,
+  };
+  for (const audience of audiences) {
+    const recipient =
+      audience === "SITTER"
+        ? {
+            userId: booking.sitterId,
+            email: booking.sitter.email,
+            phone: booking.sitter.phone,
+          }
+        : {
+            userId: booking.parentId,
+            email: booking.parent.email,
+            phone: booking.parent.phone,
+          };
+    await notifyBookingEvent(event, { ...base, audience, recipient });
+  }
 }

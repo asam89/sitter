@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { sendDueBookingReminders } from "@/lib/booking-reminders";
+import {
+  completeFinishedBookings,
+  sendFeedbackRequests,
+} from "@/lib/booking-completion";
 
-// Pre-session reminder job. Call it hourly (the final reminder can only be as
+// Hourly booking job: pre-session reminders, auto-completing paid bookings
+// whose session has ended, and the parent feedback request. Call it hourly (the final reminder can only be as
 // punctual as the cron interval):
 //   curl -fsS -H "x-maintenance-token: $MAINTENANCE_TOKEN" \
 //     https://riaya.ca/api/maintenance/booking-reminders
@@ -15,8 +20,10 @@ export async function POST(req: Request) {
   if (req.headers.get("x-maintenance-token") !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const sent = await sendDueBookingReminders();
-  return NextResponse.json(sent);
+  const reminders = await sendDueBookingReminders();
+  const completed = await completeFinishedBookings();
+  const feedback = await sendFeedbackRequests();
+  return NextResponse.json({ ...reminders, completed, feedback });
 }
 
 export async function GET(req: Request) {

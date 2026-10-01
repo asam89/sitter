@@ -2,8 +2,10 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
-import { BOOKING_STATUS_COLOR } from "@/lib/status";
+import { bookingStage, type Color } from "@/lib/status";
 import { bookingRef, dt, money, time } from "@/lib/format";
+import { ActionButton } from "@/components/ActionButton";
+import { adminMarkBookingPaid, completeBooking } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -14,15 +16,25 @@ const monthFmt = new Intl.DateTimeFormat("en-CA", {
   year: "numeric",
 });
 
-// Bubble tint per lifecycle state — mirrors the status badge colours.
-const BUBBLE_STYLE: Record<string, string> = {
-  REQUESTED: "bg-amber-100 text-amber-900 hover:bg-amber-200",
-  APPROVED: "bg-brand-blue/30 text-brand-ink hover:bg-brand-blue/50",
-  IN_PROGRESS: "bg-brand-blue/30 text-brand-ink hover:bg-brand-blue/50",
-  COMPLETED: "bg-emerald-100 text-emerald-900 hover:bg-emerald-200",
-  DECLINED: "bg-red-100 text-red-900 hover:bg-red-200",
-  CANCELLED: "bg-slate-100 text-slate-500 line-through hover:bg-slate-200",
+// Bubble tint per stage — mirrors the status badge colours.
+const BUBBLE_STYLE: Record<Color, string> = {
+  amber: "bg-amber-100 text-amber-900 hover:bg-amber-200",
+  indigo: "bg-brand-blue/30 text-brand-ink hover:bg-brand-blue/50",
+  green: "bg-emerald-100 text-emerald-900 hover:bg-emerald-200",
+  red: "bg-red-100 text-red-900 hover:bg-red-200",
+  slate: "bg-slate-100 text-slate-500 line-through hover:bg-slate-200",
 };
+
+const STAGE_ORDER = [
+  "Waiting on sitter",
+  "Waiting on parent",
+  "Waiting on payment",
+  "Confirmed",
+  "In progress",
+  "Completed",
+  "Declined",
+  "Cancelled",
+];
 
 // "YYYY-MM" → first of that month in server-local time; invalid/absent = now.
 function monthStart(param?: string): Date {
@@ -82,8 +94,14 @@ export default async function AdminBookingsCalendar({
   }
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const todayKey = dayKey(new Date());
+  const now = new Date();
+  const todayKey = dayKey(now);
   const grossValue = bookings.reduce((sum, b) => sum + b.totalAmount, 0);
+  const stageCounts = new Map<string, number>();
+  for (const b of bookings) {
+    const label = bookingStage(b).label;
+    stageCounts.set(label, (stageCounts.get(label) ?? 0) + 1);
+  }
 
   return (
     <div className="space-y-6">
@@ -122,6 +140,19 @@ export default async function AdminBookingsCalendar({
           </Link>
         </div>
       </div>
+
+      {stageCounts.size > 0 && (
+        <div className="flex flex-wrap gap-2 text-sm">
+          {STAGE_ORDER.filter((l) => stageCounts.has(l)).map((l) => (
+            <span
+              key={l}
+              className="rounded-full border border-brand-teal/20 bg-white px-3 py-1 text-brand-ink"
+            >
+              {l}: <strong>{stageCounts.get(l)}</strong>
+            </span>
+          ))}
+        </div>
+      )}
 
       <Card className="overflow-x-auto p-3">
         <div className="min-w-[52rem]">
@@ -168,9 +199,9 @@ export default async function AdminBookingsCalendar({
                       <Link
                         key={b.id}
                         href={`/bookings/${b.id}`}
-                        title={`${bookingRef(b.bookingNumber)} · ${b.parent.name} → ${b.sitter.name} · ${b.durationHours}h · ${b.status}`}
+                        title={`${bookingRef(b.bookingNumber)} · ${b.parent.name} → ${b.sitter.name} · ${b.durationHours}h · ${bookingStage(b).label}`}
                         className={`block truncate rounded-full px-2 py-1 text-[11px] font-medium transition ${
-                          BUBBLE_STYLE[b.status] ?? "bg-slate-100"
+                          BUBBLE_STYLE[bookingStage(b).color]
                         }`}
                       >
                         {time(b.dateTime)} · {b.sitter.name} ({b.durationHours}
@@ -211,13 +242,31 @@ export default async function AdminBookingsCalendar({
                       )}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge color={BOOKING_STATUS_COLOR[b.status]}>
-                      {b.status}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge color={bookingStage(b).color}>
+                      {bookingStage(b).label}
                     </Badge>
-                    {b.paidAt && b.status !== "CANCELLED" && (
-                      <Badge color="green">PAID</Badge>
-                    )}
+                    {b.status === "APPROVED" &&
+                      !b.paidAt &&
+                      b.waiverAcceptedAt && (
+                        <ActionButton
+                          action={adminMarkBookingPaid.bind(null, b.id)}
+                          confirm={`Mark ${bookingRef(b.bookingNumber)} paid? Only do this once the ${money(b.totalAmount)} has arrived.`}
+                        >
+                          Mark paid
+                        </ActionButton>
+                      )}
+                    {(b.status === "APPROVED" || b.status === "IN_PROGRESS") &&
+                      b.paidAt &&
+                      b.dateTime <= now && (
+                        <ActionButton
+                          action={completeBooking.bind(null, b.id)}
+                          variant="secondary"
+                          confirm={`Mark ${bookingRef(b.bookingNumber)} completed? The sitter's pay becomes owed and the parent is asked for feedback.`}
+                        >
+                          Mark completed
+                        </ActionButton>
+                      )}
                     <Link
                       href={`/bookings/${b.id}`}
                       className="text-sm font-medium text-brand-coral"

@@ -8,7 +8,7 @@ import {
   EmptyState,
   PageTitle,
 } from "@/components/ui";
-import { BOOKING_STATUS_COLOR } from "@/lib/status";
+import { BOOKING_STATUS_COLOR, bookingStage } from "@/lib/status";
 import { dt, money, requestRef } from "@/lib/format";
 import { getParentBookingEligibility, LEVEL_LABEL } from "@/lib/verification";
 import { cancelBookingRequest } from "@/lib/actions";
@@ -237,6 +237,7 @@ type ParentBooking = {
   isLastMinute: boolean;
   totalAmount: number;
   paidAt: Date | null;
+  waiverAcceptedAt: Date | null;
   status: keyof typeof BOOKING_STATUS_COLOR;
   sitter: { name: string };
 };
@@ -289,12 +290,9 @@ function ParentBookingSection({
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <div className="flex items-center gap-2">
-                    <Badge color={BOOKING_STATUS_COLOR[b.status]}>
-                      {b.status}
+                    <Badge color={bookingStage(b).color}>
+                      {bookingStage(b).label}
                     </Badge>
-                    {b.paidAt && b.status !== "CANCELLED" && (
-                      <Badge color="green">PAID</Badge>
-                    )}
                   </div>
                   <Link
                     href={`/bookings/${b.id}`}
