@@ -48,7 +48,9 @@ export function ShowcaseToggle({
 }) {
   if (!optedIn && !showcased) {
     return (
-      <span className="text-xs text-slate-400">Not opted in</span>
+      <span className="text-xs text-slate-400">
+        Hasn&apos;t agreed to team page
+      </span>
     );
   }
   return (

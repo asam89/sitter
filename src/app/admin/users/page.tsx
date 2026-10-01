@@ -192,6 +192,11 @@ export default async function AdminUsersPage({
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <RoleForm userId={u.id} role={u.role} isSelf={u.id === me.id} />
                 <div className="flex flex-wrap items-center gap-2">
+                  {u.role === "SITTER" && (
+                    <Link href={`/admin/roster/${u.id}`} className={link}>
+                      Sitter profile
+                    </Link>
+                  )}
                   {u.role !== "ADMIN" && <InviteButton userId={u.id} />}
                   {u.id !== me.id && (
                     <UserSuspendButton userId={u.id} suspended={u.suspended} />

@@ -135,6 +135,9 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/requests" variant="secondary">
             Requests ({openRequests})
           </ButtonLink>
+          <ButtonLink href="/admin/roster" variant="secondary">
+            Sitter profiles
+          </ButtonLink>
           <ButtonLink href="/admin/applications" variant="secondary">
             Applications ({pendingApps})
           </ButtonLink>
@@ -194,7 +197,12 @@ export default async function AdminDashboard() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="font-medium">
-                      {sp.user.name}{" "}
+                      <Link
+                        href={`/admin/roster/${sp.user.id}`}
+                        className="hover:text-brand-coral"
+                      >
+                        {sp.user.name}
+                      </Link>{" "}
                       <span className="text-sm text-slate-400">
                         {moneyHr(effectiveRate(sp))}
                       </span>

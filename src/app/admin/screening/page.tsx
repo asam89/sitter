@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
@@ -75,7 +76,14 @@ export default async function AdminScreeningPage() {
             <Card key={s.id} className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="font-semibold">{s.name}</h2>
+                  <h2 className="font-semibold">
+                    <Link
+                      href={`/admin/roster/${s.id}`}
+                      className="hover:text-brand-coral"
+                    >
+                      {s.name}
+                    </Link>
+                  </h2>
                   <p className="text-xs text-slate-500">{s.email}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
