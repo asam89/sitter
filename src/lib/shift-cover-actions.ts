@@ -12,6 +12,7 @@ import {
   fillShiftCover,
   isCoverable,
   notifyPoolOfShift,
+  shiftWindow,
 } from "@/lib/shift-covers";
 
 // Shift-cover pool: an Admin offers a booking whose sitter can't make it to
@@ -65,9 +66,12 @@ export async function offerShiftCover(
     return { error: "This shift is already in the pool." };
   }
 
-  const recipients = await coverPoolSitters(booking.sitterId);
+  const recipients = await coverPoolSitters(
+    booking.sitterId,
+    shiftWindow(booking),
+  );
   if (recipients.length === 0) {
-    return { error: "There are no other vetted sitters to offer it to." };
+    return { error: "No other vetted sitter is free during this shift." };
   }
 
   const cover = await prisma.shiftCover.create({

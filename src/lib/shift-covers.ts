@@ -26,15 +26,34 @@ export function appUrl(path: string): string {
   return `${base}${path}`;
 }
 
+export function shiftWindow(b: { dateTime: Date; durationHours: number }) {
+  return {
+    start: b.dateTime,
+    end: new Date(b.dateTime.getTime() + b.durationHours * 3600 * 1000),
+  };
+}
+
 // Vetted = has a sitter profile. Listing is a separate public-facing decision
-// and doesn't matter for covering a shift the agency is placing.
-export async function coverPoolSitters(excludeUserId: string) {
+// and doesn't matter for covering a shift the agency is placing. Sitters
+// already booked during the shift can't take it, so they're left out.
+export async function coverPoolSitters(
+  excludeUserId: string,
+  shift: { start: Date; end: Date },
+) {
   return prisma.user.findMany({
     where: {
       role: "SITTER",
       suspended: false,
-      sitterProfile: { isNot: null },
       id: { not: excludeUserId },
+      sitterProfile: {
+        slots: {
+          none: {
+            status: "BOOKED",
+            startTime: { lt: shift.end },
+            endTime: { gt: shift.start },
+          },
+        },
+      },
     },
     orderBy: { name: "asc" },
     select: {

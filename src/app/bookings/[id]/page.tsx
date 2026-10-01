@@ -13,7 +13,11 @@ import {
   startCardPayment,
 } from "@/lib/actions";
 import { offerShiftCover, withdrawShiftCover } from "@/lib/shift-cover-actions";
-import { COVERABLE_STATUSES, coverPoolSitters } from "@/lib/shift-covers";
+import {
+  COVERABLE_STATUSES,
+  coverPoolSitters,
+  shiftWindow,
+} from "@/lib/shift-covers";
 import { cardPaymentsEnabled, stripePublishableKey } from "@/lib/stripe";
 import { getBusinessSettings } from "@/lib/settings";
 import { getActiveTerms } from "@/lib/terms";
@@ -104,7 +108,7 @@ export default async function BookingPage({
     booking.dateTime > new Date();
   const coverPool =
     isAdmin && (canOfferCover || coverOpen)
-      ? await coverPoolSitters(booking.sitterId)
+      ? await coverPoolSitters(booking.sitterId, shiftWindow(booking))
       : [];
 
   const messagingOpen = !["CANCELLED", "DECLINED"].includes(booking.status);
