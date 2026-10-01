@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { buttonClass } from "@/components/ui";
 import { SitterAboutFields } from "@/components/SitterAboutFields";
 import { adminUpdateSitterAbout } from "@/lib/sitter-profile-actions";
+import { runAction } from "@/lib/run-action";
 import type { SitterAbout } from "@/lib/sitter-about";
 
 const inputCls =
@@ -31,7 +32,7 @@ export function AboutForm({
         start(async () => {
           setErr(null);
           setMsg(null);
-          const r = await adminUpdateSitterAbout(profileId, fd);
+          const r = await runAction(() => adminUpdateSitterAbout(profileId, fd));
           if (!r.ok) setErr(r.error ?? "Could not save.");
           else {
             setMsg("Saved. Parents see this on her profile now.");
