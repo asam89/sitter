@@ -10,6 +10,7 @@ import {
   uploadSitterPhoto,
   removeSitterPhoto,
 } from "@/lib/sitter-profile-actions";
+import { runAction } from "@/lib/run-action";
 
 const inputCls =
   "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
@@ -98,7 +99,7 @@ export function PublicProfileCard({
                 setMsg(null);
                 const fd = new FormData();
                 fd.set("photo", f);
-                const r = await uploadSitterPhoto(fd);
+                const r = await runAction(() => uploadSitterPhoto(fd));
                 if (!r.ok) setErr(r.error ?? "Could not upload photo.");
                 else {
                   setMsg("Photo updated.");
@@ -118,7 +119,7 @@ export function PublicProfileCard({
                 start(async () => {
                   setErr(null);
                   setMsg(null);
-                  const r = await removeSitterPhoto();
+                  const r = await runAction(() => removeSitterPhoto());
                   if (!r.ok) setErr(r.error ?? "Could not remove photo.");
                   else {
                     setMsg("Photo removed.");
@@ -141,7 +142,7 @@ export function PublicProfileCard({
           start(async () => {
             setErr(null);
             setMsg(null);
-            const r = await updateSitterPublicProfile(fd);
+            const r = await runAction(() => updateSitterPublicProfile(fd));
             if (!r.ok) setErr(r.error ?? "Could not save.");
             else {
               setMsg("Profile saved.");
