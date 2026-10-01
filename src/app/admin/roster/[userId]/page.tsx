@@ -8,6 +8,12 @@ import { effectiveRate, sitterPayout } from "@/lib/pricing";
 import { APPLICATION_STATUS_COLOR, BOOKING_STATUS_COLOR } from "@/lib/status";
 import { CHECK_TYPE_LABEL, screeningState } from "@/lib/screening";
 import { sitterStage } from "@/lib/sitter-stage";
+import {
+  isShareable,
+  sitterSharePath,
+  sitterShareUrl,
+} from "@/lib/public-sitter";
+import { CopyLink } from "./CopyLink";
 
 export const dynamic = "force-dynamic";
 
@@ -302,6 +308,30 @@ export default async function AdminSitterProfilePage({
             >
               Edit hours
             </Link>
+            <div className="mt-4 rounded-lg bg-brand-cream p-3">
+              <p className="text-sm font-medium">
+                Profile to share with parents
+              </p>
+              {isShareable({ ...sp, user: u }) ? (
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <a
+                    href={sitterSharePath(sp.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-all text-sm text-brand-coral"
+                  >
+                    {sitterShareUrl(sp.id)}
+                  </a>
+                  <CopyLink url={sitterShareUrl(sp.id)} />
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-slate-600">
+                  {u.suspended
+                    ? "Not available while the account is suspended."
+                    : "Not available: list this sitter first."}
+                </p>
+              )}
+            </div>
           </>
         )}
       </Card>

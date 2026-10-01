@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { sitterSharePath } from "@/lib/public-sitter";
 import { TEAM_GROUPS, initials, type TeamMember } from "@/lib/team";
 
 export const metadata: Metadata = {
@@ -78,7 +80,12 @@ function SitterCard({
         <Avatar name={name} index={index} />
       )}
       <div>
-        <p className="font-semibold text-brand-ink">{name}</p>
+        <Link
+          href={sitterSharePath(id)}
+          className="font-semibold text-brand-ink hover:text-brand-coral"
+        >
+          {name}
+        </Link>
         <p className="text-sm text-brand-teal-light">Babysitter</p>
         {bio && <p className="mt-2 text-sm text-slate-600">{bio}</p>}
       </div>

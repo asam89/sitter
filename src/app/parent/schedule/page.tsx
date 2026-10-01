@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { dt, moneyHr, time } from "@/lib/format";
 import { sittersWithCurrentVsc } from "@/lib/screening";
+import { isShareable, sitterSharePath } from "@/lib/public-sitter";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export default async function SchedulePage() {
       slots: { some: { status: "OPEN", startTime: { gte: new Date() } } },
     },
     include: {
-      user: { select: { name: true } },
+      user: { select: { name: true, suspended: true } },
       slots: {
         where: { status: "OPEN", startTime: { gte: new Date() } },
         orderBy: { startTime: "asc" },
@@ -69,7 +70,18 @@ export default async function SchedulePage() {
             <Card key={sp.id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="font-semibold">{sp.user.name}</h2>
+                  <h2 className="font-semibold">
+                    {isShareable(sp) ? (
+                      <Link
+                        href={sitterSharePath(sp.id)}
+                        className="hover:text-brand-coral"
+                      >
+                        {sp.user.name}
+                      </Link>
+                    ) : (
+                      sp.user.name
+                    )}
+                  </h2>
                   {vscOnFile.has(sp.userId) && (
                     <p className="mt-1 text-xs font-medium text-emerald-700">
                       Police vulnerable sector check verified by Ri&apos;aya

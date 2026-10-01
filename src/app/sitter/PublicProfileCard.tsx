@@ -61,7 +61,8 @@ export function PublicProfileCard({
         <a href="/team" className="font-medium text-brand-coral">
           Meet our team
         </a>{" "}
-        page (after a quick review).
+        page (after a quick review). While you&apos;re listed, your photo, bio
+        and rate also appear on the profile link we send to families.
       </p>
 
       {/* Photo */}
