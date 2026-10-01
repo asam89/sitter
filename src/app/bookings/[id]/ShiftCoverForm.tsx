@@ -23,10 +23,10 @@ export function ShiftCoverForm({
       <input type="hidden" name="bookingId" value={bookingId} />
       <p className="text-sm text-slate-600">
         If {sitterName} can&apos;t make this shift, offer it to the other{" "}
-        {poolSize} vetted sitter{poolSize === 1 ? "" : "s"}. The first to take
-        it becomes the sitter on this booking; the price, waiver and payment
-        stay the same. They see the time, the city and what they&apos;d earn,
-        not the address.
+        {poolSize} vetted sitter{poolSize === 1 ? "" : "s"} who aren&apos;t
+        booked at that time. The first to take it becomes the sitter on this
+        booking; the price, waiver and payment stay the same. They see the time,
+        the city and what they&apos;d earn, not the address.
       </p>
       <label className="block text-sm">
         <span className="font-medium">Note to sitters (optional)</span>
