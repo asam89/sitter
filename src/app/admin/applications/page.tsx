@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { Badge, Card, EmptyState, PageTitle } from "@/components/ui";
@@ -45,7 +46,12 @@ export default async function ApplicationsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-medium">
-                    {a.user.name}{" "}
+                    <Link
+                      href={`/admin/roster/${a.userId}`}
+                      className="hover:text-brand-coral"
+                    >
+                      {a.user.name}
+                    </Link>{" "}
                     <span className="text-sm text-slate-400">
                       {a.user.email}
                     </span>
@@ -134,7 +140,12 @@ export default async function ApplicationsPage() {
             <Card key={a.id}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">{a.user.name}</p>
+                  <Link
+                    href={`/admin/roster/${a.userId}`}
+                    className="font-medium hover:text-brand-coral"
+                  >
+                    {a.user.name}
+                  </Link>
                   <p className="text-sm text-slate-500">
                     Target {moneyHr(a.targetPayRate)}
                     {a.reviewedAt ? ` · reviewed ${dt(a.reviewedAt)}` : ""}
