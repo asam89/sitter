@@ -102,7 +102,7 @@ export async function sweepPipeline(now = new Date()): Promise<PipelineSweep> {
 
   // 1. Listed sitters with nothing open in the next two weeks.
   const listed = await prisma.sitterProfile.findMany({
-    where: { isListed: true, user: { suspended: false } },
+    where: { isListed: true, user: { suspended: false, role: "SITTER" } },
     select: {
       user: { select: { id: true, email: true, name: true } },
       slots: {
@@ -203,7 +203,7 @@ export async function sweepPipeline(now = new Date()): Promise<PipelineSweep> {
   );
   const interviewing = applications.filter((a) => a.status === "INTERVIEW");
   const unlistedVetted = await prisma.sitterProfile.findMany({
-    where: { isListed: false, user: { suspended: false } },
+    where: { isListed: false, user: { suspended: false, role: "SITTER" } },
     select: { user: { select: { name: true, email: true } } },
   });
 
@@ -234,7 +234,8 @@ export async function sweepPipeline(now = new Date()): Promise<PipelineSweep> {
   }
   if (unlistedVetted.length > 0) {
     sections.push(
-      `VETTED BUT NOT LISTED (${unlistedVetted.length})\n` +
+      `APPROVED BUT NOT LISTED, SO PARENTS CAN'T BOOK THEM (${unlistedVetted.length})\n` +
+        `Click List on ${appUrl("/admin/sitters")} when they're ready.\n` +
         unlistedVetted.map((s) => `• ${label(s.user)}`).join("\n"),
     );
   }
