@@ -78,7 +78,7 @@ export default async function AdminBroadcastPage() {
           Every other Thursday at 10am, all {audience.registered} registered
           parents get this email with the next two weeks of sitter availability.
           It is skipped when no listed sitter has open hours. Last sent:{" "}
-          {lastNewsletter ? dt(lastNewsletter.sentAt) : "never"}.
+          {lastNewsletter ? dt(lastNewsletter.sentAt) : "never"}
         </p>
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
           <p className="font-semibold">Subject: {NEWSLETTER_SUBJECT}</p>
