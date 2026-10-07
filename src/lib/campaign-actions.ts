@@ -1,12 +1,11 @@
 "use server";
 
-import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import type { CampaignAudienceKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/session";
 import { campaignSchema, smsCampaignSchema } from "@/lib/validation";
-import { getEmailProvider, getSmsProvider } from "@/lib/notifications";
+import { getSmsProvider } from "@/lib/notifications";
 import {
   smsAudienceWhere,
   smsBodyWithOptOut,
@@ -15,10 +14,13 @@ import {
   type SmsCampaignState,
 } from "@/lib/sms-campaign";
 import {
+  deliverEmailCampaign,
+  emailCampaignRecipients,
+} from "@/lib/campaign-delivery";
+import { sendParentNewsletter } from "@/lib/parent-newsletter";
+import {
   CONFIRMED_SUBSCRIBERS,
   CONSENTED_PARENTS,
-  audienceWhere,
-  campaignFooter,
   registeredParents,
   type CampaignAudience,
   type CampaignState,
@@ -105,21 +107,6 @@ export async function sendSmsCampaign(
   };
 }
 
-// Every marketing email must carry a working unsubscribe link, so parents who
-// predate the token column get one before they are emailed.
-async function ensureUnsubscribeToken(user: {
-  id: string;
-  unsubscribeToken: string | null;
-}): Promise<string> {
-  if (user.unsubscribeToken) return user.unsubscribeToken;
-  const token = randomBytes(24).toString("hex");
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { unsubscribeToken: token },
-  });
-  return token;
-}
-
 export async function sendCampaign(
   _prev: CampaignState,
   fd: FormData,
@@ -137,35 +124,8 @@ export async function sendCampaign(
     fd.get("audience") === "REGISTERED" ? "REGISTERED" : "NEWSLETTER"
   ) satisfies CampaignAudienceKind;
 
-  const accounts = await prisma.user.findMany({
-    where: audienceWhere(audienceKind),
-    select: { id: true, email: true, name: true, unsubscribeToken: true },
-  });
-  // Public sign-ups belong to the express-consent audience only. Anyone who also
-  // holds an account is mailed once, through the account row.
-  const subscribers =
-    audienceKind === "NEWSLETTER"
-      ? (
-          await prisma.newsletterSubscriber.findMany({
-            where: CONFIRMED_SUBSCRIBERS,
-            select: { email: true, unsubscribeToken: true },
-          })
-        ).filter((s) => !accounts.some((a) => a.email === s.email))
-      : [];
-  const recipients = [
-    ...accounts.map((a) => ({
-      email: a.email,
-      name: a.name as string | null,
-      unsubscribeToken: a.unsubscribeToken,
-      userId: a.id as string | null,
-    })),
-    ...subscribers.map((s) => ({
-      email: s.email,
-      name: null,
-      unsubscribeToken: s.unsubscribeToken,
-      userId: null,
-    })),
-  ];
+  const recipients = await emailCampaignRecipients(audienceKind);
+  const accounts = recipients.filter((r) => r.userId);
   const audience = await campaignAudience();
   const suppressed = audience.parents - accounts.length;
   if (recipients.length === 0) {
@@ -178,42 +138,28 @@ export async function sendCampaign(
     };
   }
 
-  const provider = getEmailProvider();
-  let failures = 0;
-  for (const r of recipients) {
-    try {
-      const token = r.userId
-        ? await ensureUnsubscribeToken({
-            id: r.userId,
-            unsubscribeToken: r.unsubscribeToken,
-          })
-        : r.unsubscribeToken;
-      await provider.sendMessage(r.email, {
-        subject,
-        body:
-          `${r.name ? `Hi ${r.name},` : "Hi,"}\n\n${body}` +
-          campaignFooter(token, audienceKind),
-      });
-    } catch (e) {
-      failures++;
-      console.error(
-        `[campaign] failed to email ${r.email}: ${String(e).slice(0, 200)}`,
-      );
-    }
-  }
-
-  await prisma.emailCampaign.create({
-    data: {
-      subject,
-      body,
-      sentByUserId: admin.id,
-      audience: audienceKind,
-      recipientCount: recipients.length - failures,
-      failureCount: failures,
-      suppressedCount: suppressed,
-    },
+  const { sent } = await deliverEmailCampaign({
+    subject,
+    body,
+    audienceKind,
+    recipients,
+    sentByUserId: admin.id,
+    suppressed,
   });
 
   revalidatePath("/admin/broadcast");
-  return { sent: recipients.length - failures, suppressed };
+  return { sent, suppressed };
+}
+
+export type NewsletterNowState = { error?: string; sent?: number };
+
+export async function sendParentNewsletterNow(): Promise<NewsletterNowState> {
+  const admin = await requireRole("ADMIN");
+  const run = await sendParentNewsletter(new Date(), {
+    force: true,
+    sentByUserId: admin.id,
+  });
+  revalidatePath("/admin/broadcast");
+  if (run.skipped) return { error: `Nothing sent: ${run.skipped}.` };
+  return { sent: run.sent };
 }
