@@ -67,6 +67,8 @@ liability waiver on every booking.
 - Newsletter sign-up with double opt-in.
 - Error dashboard: admins are emailed the moment a page or action breaks, and
   any user can file a "Report a problem" that opens a GitHub issue.
+- Automations dashboard: every scheduled job's last run and result, with an
+  alert when one fails or stops running.
 
 ## Money flow
 
@@ -254,3 +256,5 @@ All use password `password123`:
   vulnerable-sector checks are stored, accessed and audited.
 - [`docs/booking-policies.md`](docs/booking-policies.md) — pricing rules,
   refunds and booking minimums.
+- [`docs/automations.md`](docs/automations.md) — the scheduled jobs, their
+  crontab, and how a stalled or failing job is detected.
