@@ -436,34 +436,34 @@ model SitterApplication {
 // rate; isListed is the curation gate (controlled exclusively by Admin) that
 // decides whether the sitter appears in any parent-facing view.
 model SitterProfile {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  bio             String?
-  city            String?
+  id                     String    @id @default(cuid())
+  userId                 String    @unique
+  bio                    String?
+  city                   String?
   // "About me" details shown on the parent-facing profile. Editable by the
   // sitter and by Admin. All optional.
-  age             Int?
-  education       String?
-  experience      String?
-  agesCaredFor    String?
-  languages       String?
-  activities      String?
-  listedPayRate   Int // Admin-set hourly rate (whole CAD) — distinct from targetPayRate
+  age                    Int?
+  education              String?
+  experience             String?
+  agesCaredFor           String?
+  languages              String?
+  activities             String?
+  listedPayRate          Int // Admin-set hourly rate (whole CAD) — distinct from targetPayRate
   // Sitter-set hourly rate. Sitters price their own time; listedPayRate is the
   // Admin-set fallback used until a sitter sets one. See effectiveRate().
-  baseRate        Int?
-  isListed        Boolean  @default(false)
+  baseRate               Int?
+  isListed               Boolean   @default(false)
   // Public profile photo (opaque filename in public storage; not a public URL).
   // Served through /api/sitter/[id]/photo. Null = show initials avatar instead.
-  photoPath       String?
+  photoPath              String?
   // Sitter consent to appear publicly on the "Meet our team" page. Default off.
-  publicOptIn     Boolean  @default(false)
+  publicOptIn            Boolean   @default(false)
   // Admin approval to feature this sitter publicly. Both publicOptIn AND
   // showcased must be true (and isListed) before a sitter appears publicly.
-  showcased       Boolean  @default(false)
-  serviceRadiusKm Int      @default(15)
-  vettedAt        DateTime @default(now())
-  stripeAccountId String? // Stripe Connect Express connected account (test mode)
+  showcased              Boolean   @default(false)
+  serviceRadiusKm        Int       @default(15)
+  vettedAt               DateTime  @default(now())
+  stripeAccountId        String? // Stripe Connect Express connected account (test mode)
   // Mirror of the connected account's state, refreshed from Stripe (webhook or
   // on demand). A sitter can only be paid by Stripe once payouts are enabled;
   // until then Admin settles them manually and /admin/payouts flags it.
@@ -471,8 +471,8 @@ model SitterProfile {
   stripeDetailsSubmitted Boolean   @default(false)
   stripeRequirementsDue  String? // short summary of what Stripe still wants
   stripeStatusCheckedAt  DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   slots AvailabilitySlot[]
@@ -959,4 +959,20 @@ model ShiftCover {
 
   @@index([status, createdAt])
   @@index([bookingId])
+}
+
+// One row per run of a scheduled maintenance job (the host crontab calls the
+// /api/maintenance/* routes). Lets /admin/automations and the public health
+// check tell a job that ran and found nothing to do from one that stopped
+// running altogether.
+model JobRun {
+  id         String    @id @default(cuid())
+  job        String // key from AUTOMATIONS in src/lib/automations.ts
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  ok         Boolean? // null while running
+  summary    Json? // what the job returned (counts only, no personal data)
+  error      String? // truncated message when ok = false
+
+  @@index([job, startedAt])
 }

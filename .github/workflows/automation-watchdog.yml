@@ -1,0 +1,32 @@
+# Outside check that the scheduled jobs on the production host are running.
+#
+# Calls the public health endpoint every hour. It answers 503 when any job is
+# overdue or failing (and emails Admins itself); this workflow then fails, so
+# GitHub also notifies the repo owner. That covers the case where the host's
+# cron, or the whole host, is down and nothing inside the app can raise the alarm.
+#
+# Scheduled workflows only run from the default branch (main).
+# Override the URL with a repository variable HEALTH_URL if the domain changes.
+name: Automation watchdog
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check /api/health/automations
+        env:
+          HEALTH_URL: ${{ vars.HEALTH_URL || 'https://riaya.ca/api/health/automations' }}
+        run: |
+          status=$(curl -sS -o body.json -w '%{http_code}' --max-time 60 --retry 2 --retry-delay 20 "$HEALTH_URL" || echo 000)
+          cat body.json 2>/dev/null || true
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::Automation health check returned $status. See /admin/automations on the site."
+            exit 1
+          fi

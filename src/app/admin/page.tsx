@@ -12,6 +12,7 @@ import {
 import { REPORT_STATUS_COLOR, bookingStage } from "@/lib/status";
 import { sittersWithCurrentVsc } from "@/lib/screening";
 import { bookingRef, dt, money, moneyHr } from "@/lib/format";
+import { HEALTHY_STATES, automationHealth } from "@/lib/automations";
 import {
   ListingToggle,
   ReportControls,
@@ -118,6 +119,10 @@ export default async function AdminDashboard() {
   // Which sitters Ri'aya can currently stand behind. A listed sitter without
   // one is the thing an Admin most needs to see from here.
   const vscOnFile = await sittersWithCurrentVsc(sitters.map((sp) => sp.userId));
+  // Scheduled jobs that stopped or broke; otherwise they just go quiet.
+  const brokenAutomations = (await automationHealth()).filter(
+    (h) => !HEALTHY_STATES.includes(h.state) && h.state !== "NEVER_RUN",
+  );
 
   const bookedRevenue = revenueAgg._sum.totalAmount ?? 0;
   const feeRevenue = revenueAgg._sum.platformFeeAmount ?? 0;
@@ -166,8 +171,25 @@ export default async function AdminDashboard() {
           <ButtonLink href="/admin/errors" variant="secondary">
             Failures &amp; reports
           </ButtonLink>
+          <ButtonLink href="/admin/automations" variant="secondary">
+            Automations
+            {brokenAutomations.length > 0 &&
+              ` (${brokenAutomations.length} need attention)`}
+          </ButtonLink>
         </div>
       </div>
+
+      {brokenAutomations.length > 0 && (
+        <Card>
+          <p className="text-sm text-red-700">
+            <strong>Scheduled jobs need attention:</strong>{" "}
+            {brokenAutomations.map((h) => h.label).join(", ")}.{" "}
+            <Link href="/admin/automations" className="underline">
+              See automations
+            </Link>
+          </p>
+        </Card>
+      )}
 
       <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Metric label="Pending applications" value={String(pendingApps)} />
